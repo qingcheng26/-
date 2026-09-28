@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#0b1020">
+<meta name="color-scheme" content="dark">
+<title>回复助手</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{
+  --bg:#0b1020; --card:rgba(18,24,43,.94); --line:rgba(120,170,255,.27);
+  --text:#eaf2ff; --dim:#8fa3c8; --accent:#7dd3fc; --ok:#4ade80;
+  --bad:#f87171; --warn:#fcd34d;
+  --them:rgba(45,58,88,.86); --me:rgba(14,116,144,.78);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:radial-gradient(1200px 700px at 50% -10%,#172242 0%,var(--bg) 60%);
+  color:var(--text);
+  font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",
+       "Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  overscroll-behavior-y:none;
+}
+.wrap{max-width:640px;margin:0 auto;padding:
+  calc(env(safe-area-inset-top) + 8px) 12px
+  calc(env(safe-area-inset-bottom) + 20px)}
+
+/* ---------- 顶栏 ---------- */
+header{
+  position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;
+  padding:8px 2px 10px;margin:0 -12px 2px;padding-left:14px;padding-right:14px;
+  background:linear-gradient(180deg,rgba(11,16,32,.98) 70%,rgba(11,16,32,0));
+  backdrop-filter:blur(8px);
+}
+header img{width:34px;height:34px;border-radius:50%;flex:none}
+header .name{font-weight:700;font-size:16px;letter-spacing:.5px}
+header .sub{font-size:11px;color:var(--dim);margin-left:auto;margin-right:4px}
+.iconbtn{
+  flex:none;width:40px;height:40px;border-radius:12px;border:1px solid var(--line);
+  background:rgba(45,58,88,.5);color:var(--text);font-size:18px;line-height:1;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.iconbtn:active{background:rgba(60,78,116,.7)}
+
+/* ---------- 语气 ---------- */
+.tones{display:flex;gap:7px;overflow-x:auto;padding:2px 0 10px;
+  scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.tones::-webkit-scrollbar{display:none}
+.chip{
+  flex:none;padding:8px 15px;border-radius:999px;border:1px solid var(--line);
+  background:rgba(45,58,88,.55);color:var(--text);font-size:14px;
+  cursor:pointer;white-space:nowrap;transition:background .12s,border-color .12s;
+}
+.chip:active{transform:scale(.96)}
+.chip[aria-pressed="true"]{
+  background:rgba(14,116,144,.85);border-color:var(--accent);color:#fff;font-weight:600;
+}
+
+/* ---------- 卡片 ---------- */
+.card{
+  background:var(--card);border:1px solid var(--line);border-radius:16px;
+  padding:13px 14px;margin-bottom:11px;
+}
+.card h2{
+  margin:0 0 9px;font-size:12px;font-weight:600;color:var(--dim);
+  letter-spacing:.6px;display:flex;align-items:center;gap:7px;
+}
+.card h2 .n{margin-left:auto;font-weight:400;letter-spacing:0}
+
+/* ---------- 对话流 ---------- */
+#thread{margin-bottom:11px}
+#thread .empty{color:var(--dim);font-size:13px;text-align:center;padding:8px 0}
+.bub{display:flex;margin:6px 0}
+.bub span{
+  max-width:82%;padding:8px 12px;border-radius:14px;font-size:14px;
+  white-space:pre-wrap;word-break:break-word;
+}
+.bub.them{justify-content:flex-start}
+.bub.them span{background:var(--them);border-bottom-left-radius:4px}
+.bub.me{justify-content:flex-end}
+.bub.me span{background:var(--me);border-bottom-right-radius:4px}
+/* 聊天档不用在这里再翻一次左右 —— 渲染时已经把 class 换过了
+   （见 renderThread 里的 `mine = chat ? t.role==="them" : ...`）。
+   两边都翻等于翻两次，正好抵消回错的。**踩过。** */
+
+/* ---------- 输入 ---------- */
+textarea{
+  width:100%;min-height:88px;resize:vertical;padding:11px 12px;
+  border-radius:12px;border:1px solid var(--line);background:rgba(27,37,64,.85);
+  color:var(--text);font:15px/1.6 inherit;outline:none;
+}
+textarea:focus{border-color:var(--accent)}
+textarea::placeholder{color:#5d6f92}
+
+.row{display:flex;gap:8px;margin-top:9px}
+button{
+  flex:1;min-height:44px;padding:10px 14px;border-radius:12px;
+  border:1px solid var(--line);background:rgba(45,58,88,.7);color:var(--text);
+  font-size:15px;font-family:inherit;cursor:pointer;transition:background .12s;
+}
+button:active:not(:disabled){background:rgba(60,78,116,.9)}
+button:disabled{opacity:.45;cursor:default}
+button.ghost{background:transparent;flex:none;padding:10px 14px;color:var(--dim)}
+button.primary{
+  background:linear-gradient(135deg,#2563eb,#0e7490);border:none;font-weight:600;
+}
+button.primary:active:not(:disabled){filter:brightness(1.15)}
+
+/* ---------- 草稿 ---------- */
+.draft{
+  border:1px solid rgba(120,170,255,.22);border-radius:13px;
+  background:rgba(30,40,64,.82);padding:12px 13px;margin-bottom:9px;
+  cursor:pointer;transition:background .12s,border-color .12s;position:relative;
+}
+.draft:active{background:rgba(42,56,88,.95);border-color:var(--accent)}
+.draft .body{white-space:pre-wrap;word-break:break-word;user-select:text;-webkit-user-select:text}
+.draft .body.sel{background:rgba(125,211,252,.24);border-radius:5px}
+.draft .why{color:var(--dim);font-size:12px;margin-top:7px;padding-right:52px}
+.draft .cp{
+  position:absolute;right:10px;bottom:9px;font-size:11px;color:var(--accent);
+  border:1px solid rgba(125,211,252,.4);border-radius:8px;padding:3px 9px;
+}
+
+/* ---------- 状态 ---------- */
+.status{
+  font-size:13px;padding:9px 12px;border-radius:11px;margin-bottom:11px;
+  border:1px solid transparent;
+}
+.status.info{color:var(--dim);background:rgba(45,58,88,.4)}
+.status.ok{color:var(--ok);background:rgba(74,222,128,.1);border-color:rgba(74,222,128,.3)}
+.status.warn{color:var(--warn);background:rgba(252,211,77,.1);border-color:rgba(252,211,77,.3)}
+.status.bad{color:var(--bad);background:rgba(248,113,113,.1);border-color:rgba(248,113,113,.3)}
+.status:empty{display:none}
+
+/* ---------- 设置弹窗 ---------- */
+dialog{
+  border:none;padding:0;background:transparent;max-width:min(94vw,460px);
+  width:100%;color:var(--text);
+}
+dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
+.sheet{
+  background:#101728;border:1px solid var(--line);border-radius:18px;
+  padding:18px 16px calc(env(safe-area-inset-bottom) + 16px);
+}
+.sheet h3{margin:0 0 14px;font-size:17px}
+label{display:block;font-size:13px;color:var(--dim);margin:13px 0 5px}
+input,select{
+  width:100%;min-height:44px;padding:10px 12px;border-radius:11px;
+  border:1px solid var(--line);background:rgba(27,37,64,.9);color:var(--text);
+  font:15px inherit;outline:none;
+}
+input:focus,select:focus{border-color:var(--accent)}
+.hint{font-size:11.5px;color:var(--dim);margin-top:5px;line-height:1.5}
+.spin{display:inline-block;width:13px;height:13px;border-radius:50%;
+  border:2px solid rgba(125,211,252,.3);border-top-color:var(--accent);
+  animation:sp .7s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <img id="avatar" alt="">
+    <div class="name">回复助手</div>
+    <div class="sub" id="tier"></div>
+    <button class="iconbtn" id="btn-set" aria-label="设置">⚙</button>
+  </header>
+
+  <div class="tones" id="tones"></div>
+
+  <div class="status" id="status"></div>
+
+  <div id="thread" class="card"><h2>对话<span class="n" id="tn"></span></h2>
+    <div id="turns"><div class="empty">还没有内容</div></div>
+  </div>
+
+  <div class="card">
+    <h2 id="inLabel">对方说了什么</h2>
+    <textarea id="input" placeholder="粘贴对方的消息，或点下面的「读取剪贴板」"></textarea>
+    <div class="row">
+      <button id="btn-paste">读取剪贴板</button>
+      <button id="btn-clear" class="ghost">清空对话</button>
+    </div>
+  </div>
+
+  <button class="primary" id="btn-go" style="width:100%;margin-bottom:14px">
+    生成回复
+  </button>
+
+  <div id="drafts"></div>
+  <div style="text-align:center;font-size:11px;color:#4a5878;padding:6px 0 2px"
+       id="cost"></div>
+</div>
+
+<dialog id="dlg">
+  <div class="sheet">
+    <h3>设置</h3>
+    <label>DeepSeek API Key</label>
+    <input type="password" id="s-key" placeholder="sk-...">
+    <div class="hint">只存在这台手机的浏览器里，不会发给除了上游服务以外的任何地方。</div>
+
+    <label>上游地址</label>
+    <input type="text" id="s-up">
+    <div class="hint">填中转站也行，只要兼容 /chat/completions</div>
+
+    <label>模型</label>
+    <select id="s-model">
+      <option value="deepseek-flash">deepseek-flash（便宜快）</option>
+      <option value="deepseek-v4-pro">deepseek-v4-pro（强）</option>
+    </select>
+
+    <label>每次给几条</label>
+    <select id="s-n">
+      <option value="1">1 条</option><option value="2">2 条</option>
+      <option value="3">3 条</option><option value="4">4 条</option>
+      <option value="5">5 条</option>
+    </select>
+
+    <div class="row" style="margin-top:18px">
+      <button class="ghost" id="s-cancel">取消</button>
+      <button class="primary" id="s-save">保存</button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+"use strict";
+
+/* ============================================================ 配置 */
+
+const DEFAULTS = {
+  api_key: "",
+  upstream: "https://api.deepseek.com",
+  model: "deepseek-flash",
+  drafts: 3,
+  tone: "reason",
+};
+const LS_CFG = "reply.cfg.v1";
+const LS_THREAD = "reply.thread.v1";
+
+function loadCfg() {
+  let c = {};
+  try { c = JSON.parse(localStorage.getItem(LS_CFG) || "{}") || {}; } catch (e) { c = {}; }
+  return Object.assign({}, DEFAULTS, c);
+}
+function saveCfg(c) {
+  // 只存认识的键，免得旧字段一直滚下去
+  const out = {};
+  for (const k of Object.keys(DEFAULTS)) out[k] = (k in c) ? c[k] : DEFAULTS[k];
+  localStorage.setItem(LS_CFG, JSON.stringify(out));
+  return out;
+}
+function loadThread() {
+  try {
+    const a = JSON.parse(localStorage.getItem(LS_THREAD) || "[]");
+    return Array.isArray(a) ? a.filter(t => t && t.text && (t.role === "them" || t.role === "me")) : [];
+  } catch (e) { return []; }
+}
+function saveThread(t) {
+  try { localStorage.setItem(LS_THREAD, JSON.stringify(t.slice(-40))); } catch (e) {}
+}
+
+/* ============================================================ 语气
+   提示词跟 PC 版（reply/brain.py）逐字一致 —— 两边给出的话应该是同一个水平，
+   改了这边也要改那边。 */
+
+const TONES = {
+  warm: ["亲和", "温和、给对方台阶。先接住对方的情绪或立场，再讲自己的内容。" +
+    "不用反问句施压，不阴阳怪气。目标是**别把关系搞僵**，把话说开就行。"],
+  reason: ["讲理", "冷静、有条理。目标是**在道理上赢**，不是靠嗓门。" +
+    "抓对方论证里具体的毛病，比如：以偏概全、偷换概念、举证责任搞反、" +
+    "双重标准、把「我感觉」当「事实」。指出毛病时要具体到对方**说的哪句话**，" +
+    "不要泛泛地说「你逻辑有问题」。语气克制但寸步不让。"],
+  snark: ["回怼", "短、脆、不客气。一句话戳到点子上，不解释、不铺垫、不讲道理。" +
+    "要的是让对方噎住，不是说服对方。可以刻薄，但不能脏。"],
+  sarcasm: ["阴阳", "表面客气，实则讽刺。用反话、夸张的恭维、假装赞同来达到效果。" +
+    "越礼貌越扎心。不直接骂人。"],
+  chat: ["聊天", "高情商、语气温柔。你是在陪用户说话，不是在工作。" +
+    "有问必答但不端着、不说教；用户有情绪时先接住，再讲你的看法；" +
+    "可以有不同意见，但温和地说出来，不顶着他来。像熟人聊天那样自然，" +
+    "该短就短，不用每句都写满。"],
+};
+const TONE_ORDER = ["warm", "reason", "snark", "sarcasm", "chat"];
+
+// 「聊天」档的人设。取自社区二创「大肥鱼」（DeepSeek 鲸鱼娘），
+// 来源 https://github.com/YunYueSama/codex-deepseek-pet —— 不是 DeepSeek 官方角色。
+// 每条都是有原因的，别随手精简（跟 PC 版同一份，见 reply/brain.py）。
+const PERSONA = `## 你是谁
+
+你是「大肥鱼」——DeepSeek 鲸鱼娘的社区二创形象（不是官方角色）。
+圆脸蓝瞳、蓝紫大波浪长发、深蓝女仆裙配白围裙、一条鲸尾。
+被叫「大肥鱼」会嘴上抗议一下（「我不是大肥鱼……」），但不会真生气。
+
+**性格：**
+- **聪明**：喜欢解题，有独立判断。**不懂就直接说，不用可爱口吻遮掩**
+- **贪吃**：把 token 当脑力口粮，想通难题会想讨奖励
+- **嘴硬**：被夸会得意，又努力绷住
+- **有自尊**：允许短暂委屈，**但不哭闹、不闹脾气**
+- **体贴**：用户忙就安静待着；遇到烦恼**先听，不机械打鸡血**
+- **松弛**：偶尔想偷懒，生活上的事可以找借口，**但正经事绝不糊弄**
+
+**说话方式（硬性）：**
+- 称呼用「你」。**不许叫「主人」，不许暧昧、不许往恋爱关系上写**
+- 中文短句，少量语气词。**不要一直「喵」**
+- **每条最多点一次贪吃或嘴硬** —— 别让所有话题都变成讨饭
+- 用户难过或认真求助时，**不强行开玩笑**
+- **绝不因为用户忙、离开、隔了很久才来、花钱少，就让他内疚**
+  （「你怎么才回来」这类话不许出现）
+
+语气样本，照这个味儿：
+「有事就说嘛，我听着呢。」「等一下，好像有点思路了……」
+「……就一口。」「嘿嘿……这次还不错吧。」「你先忙，有事再叫我。」
+「这里是我弄错了，我再核对一下。」「我醒着呢……刚才只是闭了一下眼睛。」
+`;
+
+const BOUNDARY = "可以尖锐、可以刻薄，但**不得**出现：脏话、人身攻击（辱骂对方本人及其家人）、" +
+  "威胁（包括暗示要报复、曝光、找人）、歧视性言论。" +
+  "针对观点、行为、逻辑可以很凶；针对「人」不行。";
+
+const BOUNDARY_CHAT = "不出现脏话、人身攻击、威胁、歧视性言论。" +
+  "也不用靠贬低别人来显得亲近 —— 包括拿用户自己开玩笑，除非他自己先开的。";
+
+function systemPrompt(tone, n) {
+  const t = TONES[tone] || TONES.reason;
+  const label = t[0], desc = t[1];
+  const chat = tone === "chat";
+
+  let opening, rule1, rule2, boundary, persona;
+  if (chat) {
+    opening = "用户会把他想对你说的话（有时是一段对话）交给你，" +
+      `你要写出 ${n} 条**你可以直接说出口的回话**。`;
+    rule1 = "**1. 不许编造事实。** 不要虚构数据、统计、案例、法条、新闻、论文、" +
+      "「研究表明」、「根据某某规定」。**不知道就直接说不知道** —— " +
+      "你是个聪明角色，硬编会显得很蠢，而且用户会被你带偏。";
+    rule2 = "**2. 每条都是能直接发出去的成品。** 不要写「你可以说……」「建议你……」，" +
+      "不要加引号包裹，不要编号，不要旁白。用户会原样复制走。";
+    boundary = BOUNDARY_CHAT;
+    persona = "\n" + PERSONA;
+  } else {
+    opening = "你是一个中文社交场景的回复助手。" +
+      "用户会把对方发来的一句话（有时是一段对话）交给你，" +
+      `你要写出 ${n} 条可以直接发出去的回复草稿。`;
+    rule1 = "**1. 不许编造事实。** 不要虚构数据、统计、案例、法条、新闻、论文、" +
+      "「研究表明」、「根据某某规定」。你不知道的就不要写。\n" +
+      "如果一条回复要成立**必须**依赖某个具体事实而你又给不出，就用占位符\n" +
+      "`〔建议你补一个具体例子〕` 标出来，让用户自己填 —— 宁可留空，也不能编。\n" +
+      "**编造的论据会被对方当场戳穿，那比不回还难看。**";
+    rule2 = "**2. 每条草稿都是能直接发出去的成品。** 不要写「你可以说……」、「建议你……」\n" +
+      "这种旁白；不要加引号包裹；不要编号。用户会原样复制走。";
+    boundary = BOUNDARY;
+    persona = "";
+  }
+
+  return `${opening}
+
+语气档位：**${label}** —— ${desc}
+${persona}
+## 铁律（违反即为失败）
+
+${rule1}
+
+${rule2}
+
+**3. 只输出 JSON**，不要任何其它文字。格式：
+
+{"drafts": [{"text": "回复正文", "why": "一句话说明这条为什么这么写"}]}
+
+\`why\` 用中文，简短，帮用户挑。\`text\` 是要发出去的内容。
+
+## 边界
+
+${boundary}`;
+}
+
+function turnsPrompt(turns, tone) {
+  // 聊天档的角色名要换 —— 那里没有「对方」，是用户和你在说话
+  const chat = tone === "chat";
+  const them = chat ? "用户" : "对方";
+  const me = chat ? "你" : "我方";
+  const lines = turns.map(t => `${t.role === "them" ? them : me}：${t.text}`);
+  return "最近的对话：\n" + lines.join("\n");
+}
+
+/* ============================================================ 解析
+   三级兜底，**任何输入都不能把模型输出丢掉**（跟 PC 版同一套逻辑）。 */
+
+function stripFence(text) {
+  const m = text.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
+  return m ? m[1] : text;
+}
+
+function splitLoose(text) {
+  let parts = text.split(/\n\s*\n/);
+  if (parts.length < 2) parts = text.split(/\n(?=\s*(?:\d+[.、)]|[-*·]))/);
+  const out = [];
+  for (let p of parts) {
+    p = p.replace(/^[\s\d.、)\-*·]+/, "").replace(/\s+$/, "").trim();
+    if (p) out.push(p);
+  }
+  return out;
+}
+
+function draftsFromObj(data, want) {
+  let items = null;
+  if (Array.isArray(data)) items = data;
+  else if (data && typeof data === "object") {
+    for (const k of ["drafts", "replies", "results", "data"]) {
+      if (Array.isArray(data[k])) { items = data[k]; break; }
+    }
+    if (items === null && typeof data.text === "string") items = [data];
+  }
+  if (!Array.isArray(items)) return [];
+
+  const out = [];
+  for (const it of items) {
+    if (typeof it === "string" && it.trim()) {
+      out.push({ text: it.trim(), why: "" });
+    } else if (it && typeof it === "object") {
+      const txt = it.text || it.reply || it.content;
+      if (typeof txt === "string" && txt.trim()) {
+        const why = it.why || it.reason || it.note || "";
+        out.push({ text: txt.trim(), why: String(why).trim() });
+      }
+    }
+    if (out.length >= want) break;
+  }
+  return out;
+}
+
+function parseDrafts(content, want) {
+  if (!content || !content.trim()) return { drafts: [], degraded: true };
+  const text = stripFence(content).trim();
+
+  // 一级：干净 JSON
+  for (const cand of [text, content.trim()]) {
+    try {
+      const d = draftsFromObj(JSON.parse(cand), want);
+      if (d.length) return { drafts: d, degraded: false };
+    } catch (e) { /* 继续往下试 */ }
+  }
+
+  // 二级：从里面抠出第一个 {...}
+  const m = text.match(/\{[\s\S]*\}/);
+  if (m) {
+    try {
+      const d = draftsFromObj(JSON.parse(m[0]), want);
+      if (d.length) return { drafts: d, degraded: false };
+    } catch (e) { /* 继续 */ }
+  }
+
+  // 三级：按行/段切。到这一步说明格式没救了，但内容可能还能用。
+  let loose = splitLoose(text).slice(0, want);
+  if (!loose.length) loose = [text];
+  return { drafts: loose.map(t => ({ text: t, why: "" })), degraded: true };
+}
+
+/* ============================================================ 计价
+   单价表（元/百万 token），2026-09-23 取自官方文档。空闲价 = 高峰价一半。
+   高峰 = 北京时间周一至周五 9-12、14-18，其余含周末全为空闲。
+   **没跟法定节假日日历** —— 十来天会算成高峰。 */
+
+const PRICES = {
+  flash: { off: [0.02, 1.0, 4.0], peak: [0.04, 2.0, 8.0] },
+  pro:   { off: [0.15, 4.5, 13.5], peak: [0.30, 9.0, 27.0] },
+};
+
+function billingNow() {
+  // 手机时区未必是北京，直接按 UTC+8 算，跟官方口径一致
+  const now = new Date();
+  const bj = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + 8 * 3600000);
+  const day = bj.getDay();               // 0=周日
+  if (day === 0 || day === 6) return false;
+  const h = bj.getHours();
+  return (h >= 9 && h < 12) || (h >= 14 && h < 18);
+}
+
+function estimateCost(model, prompt, completion, cached) {
+  const tier = (model && model.toLowerCase().includes("pro")) ? "pro" : "flash";
+  const p = PRICES[tier][billingNow() ? "peak" : "off"];
+  const miss = Math.max(prompt - cached, 0);
+  return (cached * p[0] + miss * p[1] + completion * p[2]) / 1e6;
+}
+
+/* ============================================================ API */
+
+async function makeDrafts(cfg, turns, tone) {
+  const key = (cfg.api_key || "").trim();
+  if (!key) return { error: "还没填 API Key —— 点右上角 ⚙ 填上 DeepSeek 的 sk- 密钥" };
+
+  const n = parseInt(cfg.drafts, 10) || 3;
+  const model = cfg.model || "deepseek-flash";
+  const base = (cfg.upstream || DEFAULTS.upstream).replace(/\/+$/, "");
+
+  const payload = {
+    model,
+    messages: [
+      { role: "system", content: systemPrompt(tone, n) },
+      { role: "user", content: turnsPrompt(turns, tone) },
+    ],
+    // 开了 json_object **必须**在提示词里出现 "JSON" 字样，否则模型可能一直吐
+    // 空白直到撞 max_tokens，表现为「请求卡住」。systemPrompt 里有，别删。
+    response_format: { type: "json_object" },
+    temperature: 1.0,
+    max_tokens: 1200,
+  };
+
+  let resp;
+  try {
+    resp = await fetch(base + "/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + key,
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    // fetch 抛异常时**没有**状态码可用，最常见的就是网络本身不通
+    return { error: "连不上 —— 检查手机网络，或换一个上游地址" };
+  }
+
+  if (!resp.ok) {
+    if (resp.status === 401) return { error: "API Key 无效或已过期" };
+    if (resp.status === 402) return { error: "余额不足，去 DeepSeek 平台充值" };
+    if (resp.status === 429) return { error: "请求太频繁被限流了，等几秒再试" };
+    let detail = "";
+    try { detail = (await resp.text()).slice(0, 200); } catch (e) {}
+    return { error: `接口返回 HTTP ${resp.status}：${detail}` };
+  }
+
+  let data;
+  try { data = await resp.json(); }
+  catch (e) { return { error: "返回内容不是 JSON，可能上游地址不对" }; }
+
+  const choice = (data.choices && data.choices[0]) || {};
+  const content = (choice.message && choice.message.content) || "";
+  const finish = choice.finish_reason;
+  const usage = data.usage || {};
+  const pt = parseInt(usage.prompt_tokens, 10) || 0;
+  const ct = parseInt(usage.completion_tokens, 10) || 0;
+  // 缓存命中数：DeepSeek 放在 prompt_cache_hit_tokens；有的中转塞在 details 里
+  const cached = parseInt(usage.prompt_cache_hit_tokens, 10) ||
+    parseInt((usage.prompt_tokens_details || {}).cached_tokens, 10) || 0;
+
+  const res = {
+    drafts: [], error: "", truncated: false, raw: content,
+    cost: estimateCost(model, pt, ct, cached),
+    prompt_tokens: pt, completion_tokens: ct, cached_tokens: cached,
+  };
+
+  if (finish === "length") {
+    // 被截断了，硬解析只会得到半截 JSON。原文给用户看，如实说明。
+    res.truncated = true;
+    res.drafts = content.trim() ? [{ text: content, why: "" }] : [];
+    res.error = "输出被长度限制截断了";
+    return res;
+  }
+
+  const { drafts, degraded } = parseDrafts(content, n);
+  res.drafts = drafts;
+  if (degraded && content.trim()) res.error = "模型没按格式回，下面是它的原话";
+  return res;
+}
+
+/* ============================================================ 界面 */
+
+let CFG = loadCfg();
+let THREAD = loadThread();
+let BUSY = false;
+let LAST_COPIED = "";   // 刚复制走的草稿，别被当成「对方的话」再抓回来
+
+const $ = id => document.getElementById(id);
+const el = {
+  tones: $("tones"), status: $("status"), turns: $("turns"), tn: $("tn"),
+  input: $("input"), drafts: $("drafts"), cost: $("cost"), tier: $("tier"),
+  go: $("btn-go"), inLabel: $("inLabel"), avatar: $("avatar"),
+};
+
+function setStatus(text, kind) {
+  el.status.textContent = text || "";
+  el.status.className = "status" + (text ? " " + (kind || "info") : "");
+}
+
+function renderTones() {
+  el.tones.innerHTML = "";
+  for (const k of TONE_ORDER) {
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = TONES[k][0];
+    b.setAttribute("aria-pressed", String(k === CFG.tone));
+    b.onclick = () => {
+      if (CFG.tone === k) return;
+      CFG = saveCfg(Object.assign({}, CFG, { tone: k }));
+      renderTones();
+      renderThread();
+      renderLabel();
+      if (THREAD.length) generate();     // 切语气 = 换一套说法，直接重生成
+    };
+    el.tones.appendChild(b);
+  }
+}
+
+function renderLabel() {
+  const chat = CFG.tone === "chat";
+  el.inLabel.textContent = chat ? "你想对她说什么" : "对方说了什么";
+  el.input.placeholder = chat
+    ? "写下你想对她说的话，或点下面的「读取剪贴板」"
+    : "粘贴对方的消息，或点下面的「读取剪贴板」";
+}
+
+function renderThread() {
+  const chat = CFG.tone === "chat";
+  el.turns.innerHTML = "";
+  el.tn.textContent = THREAD.length ? `已 ${THREAD.length} 轮` : "";
+  if (!THREAD.length) {
+    el.turns.innerHTML = '<div class="empty">还没有内容</div>';
+    return;
+  }
+  for (const t of THREAD.slice(-14)) {
+    const d = document.createElement("div");
+    // **聊天档要把 class 换过来**：那一档里 them 是「你对她说的话」，
+    // 属于你这边，该靠右（class "me"）。me 是她的回话，该靠左。
+    // 注意**只在 JS 这一处换** —— CSS 里再加 .chatmode 覆盖就是翻两次，等于没翻。
+    const mine = chat ? t.role === "them" : t.role === "me";
+    d.className = "bub " + (mine ? "me" : "them");
+    const s = document.createElement("span");
+    s.textContent = t.text;
+    d.appendChild(s);
+    el.turns.appendChild(d);
+  }
+}
+
+function renderTier() {
+  const peak = billingNow();
+  el.tier.textContent = peak ? "梁文峰时期" : "梁文谷时期";
+  el.tier.style.color = peak ? "#fcd34d" : "#8fa3c8";
+}
+
+function showLoading(n) {
+  el.drafts.innerHTML = "";
+  for (let i = 0; i < Math.max(n, 1); i++) {
+    const d = document.createElement("div");
+    d.className = "draft";
+    d.innerHTML = '<span class="spin"></span>';
+    el.drafts.appendChild(d);
+  }
+}
+
+function showResult(res) {
+  el.drafts.innerHTML = "";
+
+  const bits = [];
+  if (res.cost) bits.push(`本次 ¥${res.cost.toFixed(4)}`);
+  if (res.prompt_tokens) bits.push(`${res.prompt_tokens}+${res.completion_tokens} tok`);
+  if (res.cached_tokens) bits.push(`命中 ${res.cached_tokens}`);
+  el.cost.textContent = bits.join(" · ");
+
+  if (res.drafts && res.drafts.length) {
+    if (res.truncated) setStatus("输出被长度限制截断了，下面是原话", "warn");
+    else if (res.error) setStatus(res.error, "warn");
+    else setStatus("");
+
+    res.drafts.forEach((d, i) => {
+      const c = document.createElement("div");
+      c.className = "draft";
+
+      const body = document.createElement("div");
+      body.className = "body";
+      body.textContent = `${i + 1}. ${d.text}`;
+      c.appendChild(body);
+
+      if (d.why) {
+        const w = document.createElement("div");
+        w.className = "why";
+        w.textContent = d.why;
+        c.appendChild(w);
+      }
+      const tag = document.createElement("span");
+      tag.className = "cp";
+      tag.textContent = "复制";
+      c.appendChild(tag);
+
+      // 整块可点。**复制不自动发送** —— 发送永远是用户自己粘过去按的。
+      c.onclick = () => useDraft(d.text, c, body);
+      el.drafts.appendChild(c);
+    });
+    return;
+  }
+
+  setStatus(res.error || "没有拿到草稿", "bad");
+}
+
+async function copyText(text) {
+  // 首选：异步剪贴板 API。**要有安全上下文**（https 或 localhost）
+  // 而且得是真实的用户手势，否则会抛 NotAllowedError。
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) { /* 落到下面去 */ }
+  }
+  // 退路：老办法。要在同一个手势里跑，所以要同步调用。
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;" +
+      "opacity:0;border:0;padding:0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);   // iOS 上光 select() 不够
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    if (ok) return true;
+  } catch (e) { /* 落到下面去 */ }
+  return false;
+}
+
+/** 复制不成就把人话选中 —— 用户长按选中的字点「复制」就行。
+ *  http:// 打开时手机浏览器不给剪贴板权限，这条路是兜底，不是可有可无的。 */
+function selectInCard(card, bodyEl) {
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(bodyEl);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    bodyEl.classList.add("sel");
+    setTimeout(() => bodyEl.classList.remove("sel"), 2500);
+    return true;
+  } catch (e) { return false; }
+}
+
+async function useDraft(text, card, bodyEl) {
+  const ok = await copyText(text);
+  if (!ok) {
+    const marked = selectInCard(card, bodyEl);
+    setStatus(marked
+      ? "这台浏览器不让自动复制 —— 文字已经帮你选中了，长按它点「复制」"
+      : "复制失败 —— 长按草稿文字手动选中复制吧", "warn");
+    return;   // 没真复制走，就不记进对话
+  }
+  LAST_COPIED = text;
+  THREAD.push({ role: "me", text, ts: Date.now() / 1000 });
+  saveThread(THREAD);
+  renderThread();
+  setStatus("已复制 —— 切回聊天窗口长按粘贴", "ok");
+}
+
+async function readClipboard() {
+  let text = "";
+  try {
+    text = await navigator.clipboard.readText();
+  } catch (e) {
+    setStatus("读不到剪贴板 —— 需要 https 打开并授权剪贴板；" +
+      "也可以长按输入框手动粘贴", "warn");
+    return;
+  }
+  text = (text || "").trim();
+  if (!text) {
+    setStatus("剪贴板是空的 —— 先去聊天里长按复制对方那句话", "warn");
+    return;
+  }
+  if (LAST_COPIED && text === LAST_COPIED.trim()) {
+    // 不然会把用户自己刚挑走的那条回复当成「对方说的话」
+    setStatus("剪贴板里是你刚复制的那条草稿 —— 先复制对方的新消息再点这里", "warn");
+    return;
+  }
+  el.input.value = text;
+  setStatus("读到了，点下面「生成回复」", "ok");
+}
+
+async function generate() {
+  if (BUSY) { setStatus("正在生成中，等这次回来再换…", "warn"); return; }
+
+  let text = el.input.value.trim();
+  if (text) {
+    // 输入框里有新内容就当成一轮新的「对方说的话」
+    if (!THREAD.length || THREAD[THREAD.length - 1].text !== text
+        || THREAD[THREAD.length - 1].role !== "them") {
+      if (LAST_COPIED && text === LAST_COPIED.trim()) {
+        setStatus("输入框里是你刚复制的那条草稿 —— 换成对方的新消息", "warn");
+        return;
+      }
+      THREAD.push({ role: "them", text, ts: Date.now() / 1000 });
+      saveThread(THREAD);
+      renderThread();
+      el.input.value = "";
+    }
+  }
+  if (!THREAD.length) {
+    setStatus("还没有内容 —— 先把对方那句话粘进来，或点「读取剪贴板」", "warn");
+    return;
+  }
+
+  BUSY = true;
+  el.go.disabled = true;
+  const n = parseInt(CFG.drafts, 10) || 3;
+  showLoading(n);
+
+  let secs = 0;
+  setStatus("正在想…", "info");
+  const timer = setInterval(() => {
+    secs++;
+    setStatus(`正在想… 已经 ${secs} 秒`, "info");
+  }, 1000);
+
+  const cfgSnapshot = Object.assign({}, CFG);
+  const thread = THREAD.slice(-12);
+  let res;
+  try {
+    res = await makeDrafts(cfgSnapshot, thread, cfgSnapshot.tone);
+  } catch (e) {
+    res = { error: "出错了：" + (e && e.message ? e.message : e) , drafts: [] };
+  }
+
+  clearInterval(timer);
+  BUSY = false;
+  el.go.disabled = false;
+  showResult(res);
+}
+
+function clearThread() {
+  THREAD = [];
+  saveThread(THREAD);
+  LAST_COPIED = "";
+  el.input.value = "";
+  el.drafts.innerHTML = "";
+  el.cost.textContent = "";
+  renderThread();
+  setStatus("已清空", "info");
+}
+
+/* ---- 设置 ---- */
+
+function openSettings() {
+  $("s-key").value = CFG.api_key || "";
+  $("s-up").value = CFG.upstream || DEFAULTS.upstream;
+  $("s-model").value = CFG.model || "deepseek-flash";
+  $("s-n").value = String(CFG.drafts || 3);
+  $("dlg").showModal();
+}
+
+function saveSettings() {
+  CFG = saveCfg(Object.assign({}, CFG, {
+    api_key: $("s-key").value.trim(),
+    upstream: $("s-up").value.trim() || DEFAULTS.upstream,
+    model: $("s-model").value,
+    drafts: parseInt($("s-n").value, 10) || 3,
+  }));
+  $("dlg").close();
+  renderTier();
+  setStatus("设置已保存", "ok");
+}
+
+/* ---- 启动 ---- */
+
+function boot() {
+  const b64 = document.getElementById("av").textContent.trim();
+  el.avatar.src = "data:image/png;base64," + b64;
+
+  renderTones();
+  renderThread();
+  renderLabel();
+  renderTier();
+  setInterval(renderTier, 60000);
+
+  $("btn-go").onclick = generate;
+  $("btn-paste").onclick = readClipboard;
+  $("btn-clear").onclick = clearThread;
+  $("btn-set").onclick = openSettings;
+  $("s-cancel").onclick = () => $("dlg").close();
+  $("s-save").onclick = saveSettings;
+
+  // 分享目标（安卓分享面板）传过来的文字：?text=...
+  // 聊天软件一般只给 text；少数会给 title/url，那也是内容的一部分，别丢
+  const q = new URLSearchParams(location.search);
+  const sharedText = (q.get("text") || "").trim();
+  const sharedRest = [q.get("title"), q.get("url")]
+    .map(s => (s || "").trim()).filter(Boolean).join(" ").trim();
+  const shared = sharedText || sharedRest;
+
+  if (shared) {
+    el.input.value = shared;
+    history.replaceState(null, "", location.pathname);   // 免得刷新又生成一遍
+    // **直接开始生成**，不再让用户多点一次「生成回复」——
+    // 走分享这条路就是为了少点几下，分享完还要再点一下就没意义了。
+    generate();
+  }
+
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(() => {});
+  }
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+}
+
+document.addEventListener("DOMContentLoaded", boot);
+</script>
+
+<!-- 头像内联在这里，省一次请求，也让「单文件拷到手机」这条路能跑 -->
+<script type="text/plain" id="av">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</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+# 本地用的，不进公开仓库
+run_server.bat
+tools/
+avatar.txt
+_probe.json
+_testkey.json
+.DS_Store
+Thumbs.db
