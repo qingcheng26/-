@@ -1,0 +1,6 @@
+# 网页文件统一用 LF —— 换行符在工作区被改成 CRLF 会让人以为文件被改过
+*.html text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.png  binary
