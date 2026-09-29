@@ -729,11 +729,20 @@ function turnsPrompt(turns, tone, task) {
 }
 
 /* ---- 按字符数取最近的一段对话 ----
-   为什么不用「最近 N 条」：一句「嗯」和一段 500 字的吐槽在条数上是一样的，
-   按条数截，长对话里丢掉的恰恰是信息量最大的那几条。
-   DeepSeek 的上下文够大，6000 字只是防跑飞的上限，不会正常触发。
-   代价是**可能从对话中间切开** —— 所以开头补一行说明，别让模型以为那是从头开始。 */
+
+   2026-09-29 实测：**20 万字符的输入直接通过**（HTTP 200），
+   输入侧的上限宽得用不完。所以这里只是「防跑飞」的上限，
+   正常聊天记录永远碰不到 —— 以前卡 6000 字属于自己给自己上枷锁，
+   粘一段长群聊就悄悄丢了前面。
+
+   为什么按字符数而不按条数：一句「嗯」和一段 500 字的吐槽在条数上是一样的，
+   按条数截，丢掉的恰恰是信息量最大的那几条。
+
+   截断时补一行说明，别让模型以为对话是从这儿开始的。 */
+const CTX_MAX_CHARS = 40000;
+
 function tailWithin(turns, maxChars) {
+  maxChars = maxChars || CTX_MAX_CHARS;
   const out = [];
   let used = 0;
   for (let i = turns.length - 1; i >= 0; i--) {
@@ -811,6 +820,61 @@ function splitLoose(text) {
   for (let p of parts) {
     p = p.replace(/^[\s\d.、)\-*·]+/, "").replace(/\s+$/, "").trim();
     if (p) out.push(p);
+  }
+  return out;
+}
+
+/* ---- 从**被截断的** JSON 里抢救草稿 ----
+   模型写到一半被长度限制砍掉时，**前面几条往往是完好的** ——
+   把整段丢掉、只显示一坨残缺 JSON，是最大的浪费：
+   用户明明已经拿到了两条能用的回复，却什么都用不了。
+
+   做法：在 `"drafts"` 后面的数组里扫一遍，按花括号配平找出**完整的对象**，
+   逐个 JSON.parse。够不到结尾的那个半截对象自然被丢掉。
+   注意要处理字符串里的转义 —— 草稿正文里出现 `"` 和 `\` 是常事，
+   不认转义会把字符串边界数错，后面全乱。 */
+function salvageDrafts(content) {
+  const s = stripFence(content);
+  const out = { drafts: [], read: "" };
+
+  // read 字段（多半在截断点之前，能救就救）
+  const rm = s.match(/"read"\s*:\s*"((?:[^"\\]|\\[\s\S])*)"/);
+  if (rm) {
+    try { out.read = JSON.parse('"' + rm[1] + '"').trim(); }
+    catch (e) { out.read = rm[1].trim(); }
+  }
+
+  const key = s.indexOf('"drafts"');
+  const arrStart = key < 0 ? -1 : s.indexOf("[", key);
+  if (arrStart < 0) return out;
+
+  let depth = 0, objStart = -1, inStr = false, esc = false;
+  for (let i = arrStart + 1; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === "{") { if (depth === 0) objStart = i; depth++; continue; }
+    if (c === "}") {
+      depth--;
+      if (depth === 0 && objStart >= 0) {
+        try {
+          const o = JSON.parse(s.slice(objStart, i + 1));
+          const txt = o && (o.text || o.reply || o.content);
+          if (typeof txt === "string" && txt.trim()) {
+            out.drafts.push({ text: txt.trim(), why: String(o.why || "").trim() });
+          }
+        } catch (e) { /* 这个对象本身坏了，跳过 */ }
+        objStart = -1;
+      }
+      if (depth < 0) break;
+      continue;
+    }
+    if (c === "]" && depth === 0) break;    // 数组正常结束
   }
   return out;
 }
@@ -1027,14 +1091,73 @@ function openHist() {
 
 /* ============================================================ API */
 
-async function makeDrafts(cfg, turns, tone, task) {
-  const key = (cfg.api_key || "").trim();
-  if (!key) return { error: "还没填 API Key —— 点右上角 ⚙ 填上 DeepSeek 的 sk- 密钥" };
+/* ---- 输出额度 ----
 
+   2026-09-29 实测：两个模型的 max_tokens 上限都是 **393216**（发超大值读报错得到的），
+   不是文档里常写的 4k/8k。所以以前的 1200 是**自己给自己上的枷锁** ——
+   摘要一段长群聊、翻译一篇长文，很容易就撞上了。
+
+   但也不直接拉满：额度只影响**上限**，不会预扣费（按实际用量计），
+   但设太大会让模型倾向于写长（回复本该短）。所以按任务给：
+
+   - 回复：草稿是「能直接发出去的话」，本来就该短。给足余量即可
+   - 摘要：取决于原文长度，长文要写得下
+   - 翻译：**译文可能比原文长**（中→英大约 1.5~2 倍），要按输入估算
+
+   inputChars 显式传进来，别在这里摸全局 THREAD —— 免得以后改的时候
+   出现「不知道它读的是哪份数据」这种事。 */
+function outputBudget(task, n, inputChars) {
+  const MAX = 60000;                      // 远低于 393216，留足安全余量
+  const chars = inputChars || 0;
+  if (task === "summary") {
+    // 摘要长度跟原文正相关，但增长慢：长文的摘要不该也那么长
+    return Math.min(MAX, Math.max(2000, Math.ceil(chars * 0.6) + 1500));
+  }
+  if (task === "translate") {
+    // 按输入长度估：中文字符约 1.5 token/字，译文按 2 倍留
+    return Math.min(MAX, Math.max(3000, Math.ceil(chars * 1.5 * 2) + 1500));
+  }
+  return Math.min(MAX, 900 * n + 900);    // 回复：每条 ~900 余量 + 开头
+}
+
+async function makeDrafts(cfg, turns, tone, task) {
   const n = parseInt(cfg.drafts, 10) || 3;
+  task = task || "reply";
+  const inputChars = turns.reduce((a, t) => a + String(t.text || "").length, 0);
+
+  // 先按估算额度要一次
+  let res = await callOnce(cfg, turns, tone, task, n, outputBudget(task, n, inputChars));
+  const firstCost = res.cost || 0;
+
+  // 还是被截断 → **自动重试一次**，直接把额度拉满。
+  // 额度只影响上限、不预扣费，所以重试的代价只有多一次输入的钱；
+  // 让用户自己再点一次「生成」要贵得多（他又付一次输入）。
+  if (res.truncated && !res.hardError) {
+    const bigger = Math.min(200000, outputBudget(task, n, inputChars) * 4 + 4000);
+    const retry = await callOnce(cfg, turns, tone, task, n, bigger);
+    // 重试只要拿到草稿就用它；没拿到就保留第一次抢救出来的
+    const better = retry.drafts && retry.drafts.length &&
+      (!retry.truncated || retry.drafts.length > (res.drafts || []).length);
+    if (better) {
+      // ⚠ 费用要**累加** —— 用户实打实付了两次输入，
+      //   只显示重试那次是骗他（钱少了，但账不对）。
+      retry.cost = (retry.cost || 0) + firstCost;
+      retry.retried = true;
+      res = retry;
+    } else {
+      res.retriedTriedButFailed = true;
+    }
+  }
+  return res;
+}
+
+/** 发一次请求并解析。重试和外层共用这一个。 */
+async function callOnce(cfg, turns, tone, task, n, budget) {
+  const key = (cfg.api_key || "").trim();
+  if (!key) return { error: "还没填 API Key —— 点右上角 ⚙ 填上 DeepSeek 的 sk- 密钥", hardError: true };
+
   const model = cfg.model || "deepseek-flash";
   const base = (cfg.upstream || DEFAULTS.upstream).replace(/\/+$/, "");
-  task = task || "reply";
   // 摘要和翻译跟语气无关 —— 别把「回怼」这种档位带进提示词，会干扰输出
   const useTone = TASKS[task] && TASKS[task].needsTone ? tone : "";
 
@@ -1048,7 +1171,7 @@ async function makeDrafts(cfg, turns, tone, task) {
     // 空白直到撞 max_tokens，表现为「请求卡住」。systemPrompt 里有，别删。
     response_format: { type: "json_object" },
     temperature: 1.0,
-    max_tokens: 1200,
+    max_tokens: budget,
   };
 
   let resp;
@@ -1063,21 +1186,23 @@ async function makeDrafts(cfg, turns, tone, task) {
     });
   } catch (e) {
     // fetch 抛异常时**没有**状态码可用，最常见的就是网络本身不通
-    return { error: "连不上 —— 检查手机网络，或换一个上游地址" };
+    // hardError：这种不用重试，重试也是一样的结果
+    return { error: "连不上 —— 检查手机网络，或换一个上游地址", hardError: true };
   }
 
   if (!resp.ok) {
-    if (resp.status === 401) return { error: "API Key 无效或已过期" };
-    if (resp.status === 402) return { error: "余额不足，去 DeepSeek 平台充值" };
-    if (resp.status === 429) return { error: "请求太频繁被限流了，等几秒再试" };
+    const he = { hardError: true };
+    if (resp.status === 401) return Object.assign(he, { error: "API Key 无效或已过期" });
+    if (resp.status === 402) return Object.assign(he, { error: "余额不足，去 DeepSeek 平台充值" });
+    if (resp.status === 429) return Object.assign(he, { error: "请求太频繁被限流了，等几秒再试" });
     let detail = "";
     try { detail = (await resp.text()).slice(0, 200); } catch (e) {}
-    return { error: `接口返回 HTTP ${resp.status}：${detail}` };
+    return Object.assign(he, { error: `接口返回 HTTP ${resp.status}：${detail}` });
   }
 
   let data;
   try { data = await resp.json(); }
-  catch (e) { return { error: "返回内容不是 JSON，可能上游地址不对" }; }
+  catch (e) { return { error: "返回内容不是 JSON，可能上游地址不对", hardError: true }; }
 
   const choice = (data.choices && data.choices[0]) || {};
   const content = (choice.message && choice.message.content) || "";
@@ -1096,10 +1221,20 @@ async function makeDrafts(cfg, turns, tone, task) {
   };
 
   if (finish === "length") {
-    // 被截断了，硬解析只会得到半截 JSON。原文给用户看，如实说明。
+    // 被截断了。**先抢救**：前面几条草稿往往是完整的，别整段丢掉。
+    // 抢救不出来才退回显示原文。
     res.truncated = true;
-    res.drafts = content.trim() ? [{ text: content, why: "" }] : [];
-    res.error = "输出被长度限制截断了";
+    const saved = salvageDrafts(content);
+    if (saved.drafts.length) {
+      res.drafts = saved.drafts;
+      res.read = saved.read || "";
+      // 说清楚：给了几条、可能还有没出来的
+      res.error = `输出被长度限制截断了 —— 抢救出 ${saved.drafts.length} 条完整的，` +
+        `可能还有没写完的。把内容拆短一点再试能拿到全部。`;
+    } else {
+      res.drafts = content.trim() ? [{ text: content, why: "" }] : [];
+      res.error = "输出被长度限制截断了（没能抢救出完整的草稿，下面是原话）";
+    }
     return res;
   }
 
@@ -1133,7 +1268,7 @@ const el = {
 };
 
 // 改代码时顺手更新这个 —— 用户报「装不上」时看设置里的这行就知道他跑的哪版
-const APP_VERSION = "2026-09-29f";
+const APP_VERSION = "2026-09-29g";
 
 function setStatus(text, kind) {
   el.status.textContent = text || "";
@@ -1259,13 +1394,13 @@ function showResult(res, opts) {
   if (res.cost) bits.push(`本次 ¥${res.cost.toFixed(4)}`);
   if (res.prompt_tokens) bits.push(`${res.prompt_tokens}+${res.completion_tokens} tok`);
   if (res.cached_tokens) bits.push(`命中 ${res.cached_tokens}`);
+  if (res.retried) bits.push("含一次自动重试");
   el.cost.textContent = bits.join(" · ");
 
   if (res.drafts && res.drafts.length) {
     let autoIdx = -1;
-    if (res.truncated) setStatus("输出被长度限制截断了，下面是原话", "warn");
-    else if (res.error) setStatus(res.error, "warn");
-    else setStatus("");
+    // res.error 已经带了具体情况（截断救回几条 / 模型没按格式回），别再盖一句笼统的
+    setStatus(res.error || "", res.error ? "warn" : "");
 
     // 模型读到的语境 —— 放在草稿前面。
     // 读错了用户一眼就能看出来，知道后面为什么写偏了；
@@ -1312,7 +1447,9 @@ function showResult(res, opts) {
     // 其余几条照常显示，改主意了点一下就把剪贴板覆盖掉。
     // 失败**不报错**（有些浏览器不给非手势写剪贴板），静默退回到「点即复制」。
     // opts.noAuto：从历史点进来的不自动复制 —— 用户还没挑呢。
-    if (CFG.auto_copy && !opts.noAuto && !res.truncated && !res.error) {
+    // ⚠ 截断抢救出来的草稿**照样自动复制** —— 它们是完整的、能用的，
+    //   不因为「后面还有没写完的」就作废。
+    if (CFG.auto_copy && !opts.noAuto) {
       autoIdx = 0;
       autoCopyFirst(res.drafts[0].text);
     }
@@ -1534,8 +1671,10 @@ async function generate() {
   el.go.disabled = false;
   showResult(res);
 
-  // 成功的才记历史 —— 报错的、被截断的都别进（那些是废的，占地方）
-  if (res.drafts && res.drafts.length && !res.error && !res.truncated) {
+  // 记历史：**有草稿就记**。
+  // 以前要求「没报错没截断」才记，结果是抢救出来的草稿（能用！）反而进不了历史。
+  // 唯一不记的情况是压根没拿到草稿。
+  if (res.drafts && res.drafts.length && !res.noDrafts) {
     const lastThem = [...THREAD].reverse().find(t => t.role === "them");
     pushHist(task, cfgSnapshot.tone, lastThem ? lastThem.text : "", res.drafts, res.read);
   }
