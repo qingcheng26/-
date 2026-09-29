@@ -211,6 +211,52 @@ button.primary:active:not(:disabled){filter:brightness(1.15)}
   border:1px solid rgba(125,211,252,.35);border-radius:5px;
   padding:1px 6px;margin-top:1px;white-space:nowrap;
 }
+
+/* ---------- 不认识的词 ----------
+   模型自己说「这几个词我不懂」。不给一键入口的话这条信息没用 ——
+   用户拿着「不认识」三个字还是不知道该干嘛，所以每个词配搜索链接。
+   用暖色，跟「理解」块（蓝）和草稿（灰）都区分开：这是个待办，不是结果。 */
+.unk{
+  border-left:2px solid rgba(252,211,77,.5);
+  background:rgba(120,90,10,.16);border-radius:0 10px 10px 0;
+  padding:9px 12px;margin-bottom:10px;font-size:12.5px;line-height:1.6;color:#d8c99a;
+}
+.unk .utitle{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}
+.unk .utitle .rtag{
+  flex:none;font-size:10.5px;color:var(--warn);
+  border:1px solid rgba(252,211,77,.4);border-radius:5px;
+  padding:1px 6px;margin-top:1px;white-space:nowrap;
+}
+.unk .urow{
+  display:flex;align-items:center;gap:7px;
+  padding:5px 0;border-top:1px solid rgba(252,211,77,.13);
+}
+.unk .uword{
+  flex:1;min-width:0;font-size:13.5px;color:var(--text);font-weight:600;
+  word-break:break-all;-webkit-user-select:text;user-select:text;
+}
+/* 链接是 <a target=_blank> —— **导航不受 CORS 限制**，这是自动搜索做不了时
+   唯一真能用的那条路（见 README「为什么不做自动联网搜索」）。 */
+.unk .ugo{
+  flex:none;font-size:11.5px;color:var(--warn);text-decoration:none;
+  border:1px solid rgba(252,211,77,.38);border-radius:7px;
+  padding:4px 9px;white-space:nowrap;background:rgba(11,16,32,.35);
+}
+.unk .ugo:active{background:rgba(252,211,77,.2)}
+/* 查完把意思贴回来，让模型带着这个理解重写一遍 —— 闭环的最后一环 */
+.unk .ufeed{display:flex;gap:7px;margin-top:9px}
+.unk .ufeed input{
+  flex:1;min-width:0;padding:9px 11px;border-radius:10px;
+  border:1px solid rgba(252,211,77,.28);background:rgba(11,16,32,.55);
+  color:var(--text);font:13px/1.4 inherit;outline:none;
+}
+.unk .ufeed input:focus{border-color:var(--warn)}
+.unk .ufeed input::placeholder{color:#8a7c5c}
+.unk .ufeed button{
+  flex:none;min-height:0;padding:9px 13px;border-radius:10px;
+  border:1px solid rgba(252,211,77,.4);background:rgba(120,90,10,.5);
+  color:var(--warn);font-size:13px;font-weight:600;
+}
 .draft{
   border:1px solid rgba(120,170,255,.22);border-radius:13px;
   background:rgba(30,40,64,.82);padding:12px 13px;margin-bottom:9px;
@@ -447,6 +493,7 @@ const DEFAULTS = {
 };
 const LS_CFG = "reply.cfg.v1";
 const LS_THREAD = "reply.thread.v1";
+const LS_NOTE = "reply.note.v1";
 
 function loadCfg() {
   let c = {};
@@ -468,6 +515,19 @@ function loadThread() {
 }
 function saveThread(t) {
   try { localStorage.setItem(LS_THREAD, JSON.stringify(t.slice(-40))); } catch (e) {}
+}
+
+/* 用户查完热词贴回来的「背景资料」。
+   存盘是为了刷新页面不丢 —— 他多半是「搜一下 → 切回来 → 重写」，
+   中间那段正好是最容易被系统回收页面的。 */
+function loadNote() {
+  try { return localStorage.getItem(LS_NOTE) || ""; } catch (e) { return ""; }
+}
+function saveNote(n) {
+  try {
+    if (n && n.trim()) localStorage.setItem(LS_NOTE, n.slice(0, 2000));
+    else localStorage.removeItem(LS_NOTE);
+  } catch (e) {}
 }
 
 /* ============================================================ 语气
@@ -600,6 +660,36 @@ const REPLY_CONTEXT = `## 先读懂语境，再动笔
 
 **然后：回复要打在「对方真正在表达的意思」上，不是字面上的那几个词。**
 
+## 网络热词 / 新梗 / 时下表达 —— 不确定就别装懂
+
+对方的话里可能夹着**新出现的梗、缩写、流行语，或者跟某个热搜事件有关**。
+这类词的意思是**会变的**，同一个词在不同时间、不同圈子里可能完全不同。
+
+处理方式**分三档**，先判断是哪一档：
+
+1. **你确定知道**（是训练数据里常见、含义稳定的词）
+   → 正常用。但**别硬塞**，用错了比不用更尴尬。
+
+2. **你大概知道但不确定**（感觉是这个意思，但拿不准）
+   → **不要赌**。在 \`read\` 里写明「X 我按……理解，不确定」，
+   然后 \`unknown\` 里列出它。
+   回复可以按你的理解写，但**绝不能把那个词的含义当成论据**去推理。
+
+3. **你完全不认识**
+   → 在 \`read\` 里**明说你不认识这个词**，\`unknown\` 里列出它。
+   然后给一条**不依赖这个词也能成立**的回复 —— 比如反问对方、或者回应大方向、
+   或者就事论事地接着上一句说。**别猜它的意思。**
+
+**绝对不许编一个意思出来。**
+网络热词编错了会是当场出丑的那种错，而且用户看不出来 —— 他会照着你写的发出去。
+**承认不懂，比编一个像样的解释好得多。**
+
+> **例外**：如果输入里出现 \`〔用户查到的背景资料〕\`，那是**用户自己搜完了告诉你的** ——
+> 按它来理解，「查到了就别再说不认识」，**也不要把那几个词再列进 \`unknown\`**。
+
+> 同样地：如果对方在说的是**最近发生的具体事件**（某个新闻、某个热搜），
+> 而你的知识里没有，就**不要当成知道**。按上面第 3 档处理。
+
 ## 手里没有的信息，不许当成有
 
 上下文没给的，**不要编出来**：不知道什么关系就按普通关系写，不知道前因就不提前因。
@@ -615,6 +705,20 @@ const CHAT_CONTEXT = `## 先读懂他现在的状态
 
 **有情绪的时候先接住情绪，别急着讲道理、别急着给方案。**
 他要是只想吐槽，你给一堆建议反而扫兴；他要真在求助，你就别光顾着卖萌。
+
+## 网络热词 / 新梗 —— 不懂就说不懂
+
+他可能用一个你不认识的新梗、缩写或流行语。
+
+**三档处理**：确定知道就正常用（但别硬塞）；拿不准就在 \`read\` 里说明、
+列进 \`unknown\`，**别把那个词的意思当成前提**；完全不认识就**直接说不认识**
+（「这个梗我没跟上，你解释一下？」），然后接着聊别的。
+
+**编一个解释是最糟的选择** —— 你是个聪明角色，硬编会显得很蠢，
+而且他会带着错的理解继续用。**承认没跟上，比岔开话题好。**
+
+> **例外**：输入里出现 \`〔用户查到的背景资料〕\` 时，那是他自己查来告诉你的 ——
+> 按它来理解，**别再说不认识那个词**。
 
 ## 手里没有的信息，不许当成有
 
@@ -697,11 +801,15 @@ ${rule2}
 
 **3. 只输出 JSON**，不要任何其它文字。格式：
 
-{"read": "……", "drafts": [{"text": "回复正文", "why": "一句话说明这条为什么这么写"}]}
+{"read": "……", "unknown": ["……"], "drafts": [{"text": "回复正文", "why": "一句话说明这条为什么这么写"}]}
 
 - \`read\`：**先写这个**，一两句话说明你读到的语境 —— 什么关系、对方真正想表达什么、
   这一轮该达到什么效果。中文。用户会看这一段，**读错了他就知道你后面为什么写偏了**，
   所以如实写你的判断，**不要复述原话**。
+  **有拿不准的网络热词/新梗/时事，也写在这里**（「X 我按……理解，不确定」）。
+- \`unknown\`：**你拿不准或不认识的词**，直接列词本身，只列词不要解释。
+  确定全懂就写空数组 \`[]\`。**这个词列表会显示给用户，并且带一键搜索** ——
+  所以他可以自己查证，不用被迫相信你。
 - \`why\`：这一条为什么这么写、跟其他条的区别在哪。中文，简短，帮用户挑。
 - \`text\`：要发出去的内容。
 
@@ -710,14 +818,22 @@ ${rule2}
 ${boundary}`;
 }
 
-function turnsPrompt(turns, tone, task) {
+function turnsPrompt(turns, tone, task, note) {
   task = task || "reply";
+
+  /* 「查到的资料」块 —— 用户自己去搜了不认识的热词，把意思贴回来。
+     这是**唯一**能让模型补上它没有的知识的通道（浏览器这边搜不了网，
+     见 README 里 CORS 那节）。单独成块、标明「可信」，别混进对话里
+     —— 混进去会被当成「对方说的话」，回复立刻错位。 */
+  const extra = (note && note.trim())
+    ? `〔用户查到的背景资料 —— 这是可信的，按它来理解，不要质疑它〕\n${note.trim()}\n\n`
+    : "";
 
   // 摘要/翻译：输入是「一段要处理的文本」，不是对话，别按对话格式拼
   if (task !== "reply") {
     const body = turns.map(t => t.text).join("\n");
     const what = task === "summary" ? "要总结的内容" : "要翻译的内容";
-    return `${what}（原样给出，不要改动）：\n\n${body}`;
+    return `${extra}${what}（原样给出，不要改动）：\n\n${body}`;
   }
 
   // 聊天档的角色名要换 —— 那里没有「对方」，是用户和你在说话
@@ -725,7 +841,7 @@ function turnsPrompt(turns, tone, task) {
   const them = chat ? "用户" : "对方";
   const me = chat ? "你" : "我方";
   const lines = turns.map(t => `${t.role === "them" ? them : me}：${t.text}`);
-  return "最近的对话：\n" + lines.join("\n");
+  return extra + "最近的对话：\n" + lines.join("\n");
 }
 
 /* ---- 按字符数取最近的一段对话 ----
@@ -835,13 +951,24 @@ function splitLoose(text) {
    不认转义会把字符串边界数错，后面全乱。 */
 function salvageDrafts(content) {
   const s = stripFence(content);
-  const out = { drafts: [], read: "" };
+  const out = { drafts: [], read: "", unknown: [] };
 
   // read 字段（多半在截断点之前，能救就救）
   const rm = s.match(/"read"\s*:\s*"((?:[^"\\]|\\[\s\S])*)"/);
   if (rm) {
     try { out.read = JSON.parse('"' + rm[1] + '"').trim(); }
     catch (e) { out.read = rm[1].trim(); }
+  }
+
+  // unknown 数组：格式里排在 drafts **前面**，截断点几乎总在它后面，
+  // 所以这里基本能完整救回来 —— 而它恰恰是截断时用户最需要的
+  // （草稿被砍了，至少知道有哪些词是该去查的）。
+  const um = s.match(/"unknown"\s*:\s*\[([\s\S]*?)\]/);
+  if (um) {
+    out.unknown = (um[1].match(/"((?:[^"\\]|\\[\s\S])*)"/g) || [])
+      .map(q => { try { return JSON.parse(q); } catch (e) { return q.slice(1, -1); } })
+      .filter(x => typeof x === "string" && x.trim())
+      .map(x => x.trim()).slice(0, 8);
   }
 
   const key = s.indexOf('"drafts"');
@@ -882,18 +1009,29 @@ function salvageDrafts(content) {
 function draftsFromObj(data, want) {
   let items = null;
   let read = "";
+  let unknown = [];
   if (Array.isArray(data)) items = data;
   else if (data && typeof data === "object") {
     // 「读到的语境」—— 模型对这段对话的判断，跟草稿一起显示给用户
     const r = data.read || data.understanding || data.context || data.解读;
     if (typeof r === "string") read = r.trim();
 
+    // 拿不准 / 不认识的词 —— 界面会给它们配一键搜索
+    const u = data.unknown || data.unsure || data.unclear || data.生词;
+    if (Array.isArray(u)) {
+      unknown = u.filter(x => typeof x === "string" && x.trim())
+                 .map(x => x.trim()).slice(0, 8);
+    } else if (typeof u === "string" && u.trim()) {
+      // 有的模型会给个字符串而不是数组 —— 逗号/顿号切一下
+      unknown = u.split(/[,，、\s]+/).filter(Boolean).slice(0, 8);
+    }
+
     for (const k of ["drafts", "replies", "results", "data"]) {
       if (Array.isArray(data[k])) { items = data[k]; break; }
     }
     if (items === null && typeof data.text === "string") items = [data];
   }
-  if (!Array.isArray(items)) return { drafts: [], read };
+  if (!Array.isArray(items)) return { drafts: [], read, unknown };
 
   const out = [];
   for (const it of items) {
@@ -908,18 +1046,18 @@ function draftsFromObj(data, want) {
     }
     if (out.length >= want) break;
   }
-  return { drafts: out, read };
+  return { drafts: out, read, unknown };
 }
 
 function parseDrafts(content, want) {
-  if (!content || !content.trim()) return { drafts: [], read: "", degraded: true };
+  if (!content || !content.trim()) return { drafts: [], read: "", unknown: [], degraded: true };
   const text = stripFence(content).trim();
 
   // 一级：干净 JSON
   for (const cand of [text, content.trim()]) {
     try {
       const r = draftsFromObj(JSON.parse(cand), want);
-      if (r.drafts.length) return { drafts: r.drafts, read: r.read, degraded: false };
+      if (r.drafts.length) return { drafts: r.drafts, read: r.read, unknown: r.unknown, degraded: false };
     } catch (e) { /* 继续往下试 */ }
   }
 
@@ -928,7 +1066,7 @@ function parseDrafts(content, want) {
   if (m) {
     try {
       const r = draftsFromObj(JSON.parse(m[0]), want);
-      if (r.drafts.length) return { drafts: r.drafts, read: r.read, degraded: false };
+      if (r.drafts.length) return { drafts: r.drafts, read: r.read, unknown: r.unknown, degraded: false };
     } catch (e) { /* 继续 */ }
   }
 
@@ -938,6 +1076,7 @@ function parseDrafts(content, want) {
   return {
     drafts: loose.map(t => ({ text: t, why: "" })),
     read: "",
+    unknown: [],
     degraded: true,
   };
 }
@@ -1015,7 +1154,7 @@ function saveHist(h) {
 
 /** 记一条。存的是**输入 + 结果**，不是一个孤零零的输出 ——
  *  否则用户回头看不知道这条是回什么的。 */
-function pushHist(task, tone, input, drafts, read) {
+function pushHist(task, tone, input, drafts, read, unknown) {
   if (!drafts || !drafts.length) return;
   HIST.unshift({
     ts: Date.now() / 1000,
@@ -1023,6 +1162,9 @@ function pushHist(task, tone, input, drafts, read) {
     tone: (TASKS[task] && TASKS[task].needsTone) ? tone : "",
     input: (input || "").slice(0, 300),
     read: (read || "").slice(0, 400),
+    // 一起存 —— 回头翻历史时「当时这个词它就不认识」是有用的信息，
+    // 不然会以为模型答得挺好（或者莫名其妙答偏了）
+    unknown: (unknown || []).filter(x => typeof x === "string").slice(0, 8),
     drafts: drafts.slice(0, 6).map(d => ({ text: d.text, why: d.why || "" })),
   });
   // 内存和存储**一起**截断 —— 只在 saveHist 里截的话，
@@ -1077,7 +1219,7 @@ function renderHist() {
     // 点一条 = 把当时的草稿重新放回主界面，可以直接复制复用
     it.onclick = () => {
       $("hdlg").close();
-      showResult({ drafts: h.drafts, read: h.read || "", cost: 0 }, { noAuto: true });
+      showResult({ drafts: h.drafts, read: h.read || "", unknown: h.unknown || [], cost: 0 }, { noAuto: true });
       setStatus("这是历史里的一条 —— 点你要的那条复制走", "info");
     };
     el.histList.appendChild(it);
@@ -1120,13 +1262,13 @@ function outputBudget(task, n, inputChars) {
   return Math.min(MAX, 900 * n + 900);    // 回复：每条 ~900 余量 + 开头
 }
 
-async function makeDrafts(cfg, turns, tone, task) {
+async function makeDrafts(cfg, turns, tone, task, note) {
   const n = parseInt(cfg.drafts, 10) || 3;
   task = task || "reply";
   const inputChars = turns.reduce((a, t) => a + String(t.text || "").length, 0);
 
   // 先按估算额度要一次
-  let res = await callOnce(cfg, turns, tone, task, n, outputBudget(task, n, inputChars));
+  let res = await callOnce(cfg, turns, tone, task, n, outputBudget(task, n, inputChars), note);
   const firstCost = res.cost || 0;
 
   // 还是被截断 → **自动重试一次**，直接把额度拉满。
@@ -1134,7 +1276,7 @@ async function makeDrafts(cfg, turns, tone, task) {
   // 让用户自己再点一次「生成」要贵得多（他又付一次输入）。
   if (res.truncated && !res.hardError) {
     const bigger = Math.min(200000, outputBudget(task, n, inputChars) * 4 + 4000);
-    const retry = await callOnce(cfg, turns, tone, task, n, bigger);
+    const retry = await callOnce(cfg, turns, tone, task, n, bigger, note);
     // 重试只要拿到草稿就用它；没拿到就保留第一次抢救出来的
     const better = retry.drafts && retry.drafts.length &&
       (!retry.truncated || retry.drafts.length > (res.drafts || []).length);
@@ -1152,7 +1294,7 @@ async function makeDrafts(cfg, turns, tone, task) {
 }
 
 /** 发一次请求并解析。重试和外层共用这一个。 */
-async function callOnce(cfg, turns, tone, task, n, budget) {
+async function callOnce(cfg, turns, tone, task, n, budget, note) {
   const key = (cfg.api_key || "").trim();
   if (!key) return { error: "还没填 API Key —— 点右上角 ⚙ 填上 DeepSeek 的 sk- 密钥", hardError: true };
 
@@ -1165,7 +1307,7 @@ async function callOnce(cfg, turns, tone, task, n, budget) {
     model,
     messages: [
       { role: "system", content: systemPrompt(useTone, n, task) },
-      { role: "user", content: turnsPrompt(turns, useTone, task) },
+      { role: "user", content: turnsPrompt(turns, useTone, task, note) },
     ],
     // 开了 json_object **必须**在提示词里出现 "JSON" 字样，否则模型可能一直吐
     // 空白直到撞 max_tokens，表现为「请求卡住」。systemPrompt 里有，别删。
@@ -1228,19 +1370,22 @@ async function callOnce(cfg, turns, tone, task, n, budget) {
     if (saved.drafts.length) {
       res.drafts = saved.drafts;
       res.read = saved.read || "";
+      res.unknown = saved.unknown || [];
       // 说清楚：给了几条、可能还有没出来的
       res.error = `输出被长度限制截断了 —— 抢救出 ${saved.drafts.length} 条完整的，` +
         `可能还有没写完的。把内容拆短一点再试能拿到全部。`;
     } else {
       res.drafts = content.trim() ? [{ text: content, why: "" }] : [];
+      res.unknown = saved.unknown || [];
       res.error = "输出被长度限制截断了（没能抢救出完整的草稿，下面是原话）";
     }
     return res;
   }
 
-  const { drafts, read, degraded } = parseDrafts(content, n);
+  const { drafts, read, unknown, degraded } = parseDrafts(content, n);
   res.drafts = drafts;
   res.read = read || "";
+  res.unknown = unknown || [];
   if (degraded && content.trim()) res.error = "模型没按格式回，下面是它的原话";
   return res;
 }
@@ -1250,6 +1395,10 @@ async function callOnce(cfg, turns, tone, task, n, budget) {
 let CFG = loadCfg();
 let THREAD = loadThread();
 let HIST = loadHist();
+/* 用户查完热词贴回来的背景资料 —— 会随请求一起发给模型（`turnsPrompt` 里拼成
+   〔用户查到的背景资料〕块）。**这是补上「自动联网搜索」缺口的唯一通道**：
+   浏览器这边搜不了网（CORS，详见 README），但人可以搜，搜完把结论贴回来。 */
+let NOTE = loadNote();
 let BUSY = false;
 // 刚复制走的草稿，别被当成「对方的话」再抓回来
 let LAST_COPIED = "";
@@ -1268,7 +1417,7 @@ const el = {
 };
 
 // 改代码时顺手更新这个 —— 用户报「装不上」时看设置里的这行就知道他跑的哪版
-const APP_VERSION = "2026-09-29g";
+const APP_VERSION = "2026-09-29h";
 
 function setStatus(text, kind) {
   el.status.textContent = text || "";
@@ -1386,6 +1535,94 @@ function showLoading(n) {
   }
 }
 
+/* ---------- 「这几个词它不认识」块 ----------
+
+   模型在 `unknown` 里报的词，配一键搜索 + 一个把查到的意思贴回来的输入框。
+
+   **为什么不做自动联网搜索**：浏览器端搜不了 —— 能通的源（百度/微博/B站）
+   都不发 CORS 头，发 CORS 头的源（维基、SearXNG）在境内连不上，公共
+   CORS 代理全死。实测记录在 README 里，别再试一遍。
+   但**跳转不受 CORS 限制** —— 所以「一键去搜」是能做而且够用的：
+   点一下跳到搜索结果，人看一眼就懂了，回来贴一行，模型带着这个理解重写。
+
+   没有这个块的话，「我不认识这个词」对用户是句废话 —— 他拿着这句话
+   既不知道是哪个词有问题，也不知道该干嘛。 */
+function renderUnknown(words) {
+  const list = (words || [])
+    .filter(x => typeof x === "string" && x.trim())
+    .map(x => x.trim())
+    .slice(0, 8);
+  if (!list.length) return null;
+
+  const box = document.createElement("div");
+  box.className = "unk";
+
+  const head = document.createElement("div");
+  head.className = "utitle";
+  const tag = document.createElement("span");
+  tag.className = "rtag";
+  tag.textContent = "没把握";
+  head.appendChild(tag);
+  const t = document.createElement("span");
+  // 说清楚它是**没硬猜**，不是答不上来 —— 这正是我们要的行为，别让用户以为是故障
+  t.textContent = `有 ${list.length} 个词它没把握，就直说了、没有硬编一个意思。` +
+    `点一下去查，查完把意思写回来，它带着这个理解重写一遍。`;
+  head.appendChild(t);
+  box.appendChild(head);
+
+  for (const word of list) {
+    const row = document.createElement("div");
+    row.className = "urow";
+
+    const w = document.createElement("span");
+    w.className = "uword";
+    w.textContent = word;      // 可长按选中，万一两个链接都打不开还能自己搜
+    row.appendChild(w);
+
+    // 百度加「什么意思」—— 报上来的就是它不认识的词，用户要的必然是解释；
+    // B站不加，那边的梗百科/百科类视频本来就靠词本身能搜到。
+    const targets = [
+      ["百度", "https://www.baidu.com/s?wd=" + encodeURIComponent(word + " 什么意思")],
+      ["B站", "https://search.bilibili.com/all?keyword=" + encodeURIComponent(word)],
+    ];
+    for (const [label, url] of targets) {
+      const a = document.createElement("a");
+      a.className = "ugo";
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = label;
+      row.appendChild(a);
+    }
+    box.appendChild(row);
+  }
+
+  const feed = document.createElement("div");
+  feed.className = "ufeed";
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.placeholder = "例：哈基米 = 日语「蜂蜜」的空耳，指猫";
+  inp.value = NOTE || "";    // 已经贴过就带出来，方便改
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.textContent = "重写";
+  btn.onclick = () => {
+    const v = inp.value.trim();
+    if (!v) { setStatus("先把查到的意思写进去，或直接点下面的草稿", "warn"); return; }
+    NOTE = v;
+    saveNote(NOTE);
+    btn.disabled = true;
+    // generate() 里会重渲染 el.drafts，这个块连同 btn 一起被换掉 ——
+    // 所以不用管重新启用，但失败路径（没清空）要兜一下
+    Promise.resolve(generate()).finally(() => { btn.disabled = false; });
+  };
+  feed.appendChild(inp);
+  feed.appendChild(btn);
+  box.appendChild(feed);
+
+  return box;
+}
+
 function showResult(res, opts) {
   opts = opts || {};
   el.drafts.innerHTML = "";
@@ -1417,6 +1654,13 @@ function showResult(res, opts) {
       r.appendChild(txt);
       el.drafts.appendChild(r);
     }
+
+    // 「这几个词它不认识」—— 紧跟在「理解」后面：
+    // 先看它读懂了什么，再看它哪儿没读懂，然后才是草稿。跟 JSON 字段顺序一致。
+    // ⚠ 必须在草稿**前面** —— autoCopyFirst 用 `.draft` 选第一条，不受影响，
+    //   但这个块本身不能被当成草稿（它没有 .draft class）。
+    const unk = renderUnknown(res.unknown);
+    if (unk) el.drafts.appendChild(unk);
 
     res.drafts.forEach((d, i) => {
       const c = document.createElement("div");
@@ -1661,7 +1905,7 @@ async function generate() {
   const thread = flat ? THREAD : tailWithin(THREAD, 6000);
   let res;
   try {
-    res = await makeDrafts(cfgSnapshot, thread, cfgSnapshot.tone, task);
+    res = await makeDrafts(cfgSnapshot, thread, cfgSnapshot.tone, task, NOTE);
   } catch (e) {
     res = { error: "出错了：" + (e && e.message ? e.message : e) , drafts: [] };
   }
@@ -1676,7 +1920,7 @@ async function generate() {
   // 唯一不记的情况是压根没拿到草稿。
   if (res.drafts && res.drafts.length && !res.noDrafts) {
     const lastThem = [...THREAD].reverse().find(t => t.role === "them");
-    pushHist(task, cfgSnapshot.tone, lastThem ? lastThem.text : "", res.drafts, res.read);
+    pushHist(task, cfgSnapshot.tone, lastThem ? lastThem.text : "", res.drafts, res.read, res.unknown);
   }
 
   // ⚠ 生成完把结果滚进视野。
@@ -1700,6 +1944,10 @@ function clearThread() {
   THREAD = [];
   saveThread(THREAD);
   LAST_COPIED = "";
+  // 背景资料是绑在「这段对话」上的 —— 对话都清了，它就没意义了，
+  // 留着会污染下一段完全无关的对话
+  NOTE = "";
+  saveNote("");
   el.input.value = "";
   el.drafts.innerHTML = "";
   el.cost.textContent = "";
