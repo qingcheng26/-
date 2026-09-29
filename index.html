@@ -200,6 +200,15 @@ input,select{
 }
 input:focus,select:focus{border-color:var(--accent)}
 .hint{font-size:11.5px;color:var(--dim);margin-top:5px;line-height:1.5}
+/* 设置里的诊断信息块 —— 装不上时截图这块就行 */
+.ver{
+  margin-top:16px;padding:9px 11px;border-radius:10px;
+  background:rgba(11,16,32,.7);border:1px solid rgba(120,170,255,.18);
+  font-size:10.5px;line-height:1.75;color:var(--dim);
+  font-family:ui-monospace,Consolas,monospace;word-break:break-all;
+  -webkit-user-select:text;user-select:text;
+}
+.ver b{color:var(--accent);font-weight:600}
 .spin{display:inline-block;width:13px;height:13px;border-radius:50%;
   border:2px solid rgba(125,211,252,.3);border-top-color:var(--accent);
   animation:sp .7s linear infinite;vertical-align:-2px}
@@ -272,6 +281,9 @@ input:focus,select:focus{border-color:var(--accent)}
       <option value="3">3 条</option><option value="4">4 条</option>
       <option value="5">5 条</option>
     </select>
+
+    <!-- 诊断信息：装不上时截图这一块给我，比来回猜快得多 -->
+    <div class="ver" id="ver"></div>
 
     <div class="row" style="margin-top:18px">
       <button class="ghost" id="s-cancel">取消</button>
@@ -633,7 +645,11 @@ const el = {
   go: $("btn-go"), inLabel: $("inLabel"), avatar: $("avatar"),
   install: $("install"), installTxt: $("install-txt"),
   installGo: $("install-go"), installX: $("install-x"),
+  ver: $("ver"),
 };
+
+// 改代码时顺手更新这个 —— 用户报「装不上」时看设置里的这行就知道他跑的哪版
+const APP_VERSION = "2026-09-29c";
 
 function setStatus(text, kind) {
   el.status.textContent = text || "";
@@ -898,7 +914,26 @@ function openSettings() {
   $("s-up").value = CFG.upstream || DEFAULTS.upstream;
   $("s-model").value = CFG.model || "deepseek-flash";
   $("s-n").value = String(CFG.drafts || 3);
+  el.ver.innerHTML = buildDiag();
   $("dlg").showModal();
+}
+
+// 装不上时让用户截图这块给我 —— 别再来回猜是哪个浏览器、拿到句柄没有
+function buildDiag() {
+  const ua = navigator.userAgent;
+  const v = installVerdict();
+  const yn = b => b ? "是" : "否";
+  return [
+    `版本   : <b>${APP_VERSION}</b>`,
+    `浏览器 : <b>${browserName()}</b>`,
+    `内置   : ${yn(isInAppBrowser())}`,
+    `已是App: ${yn(isStandalone())}`,
+    `安装句柄: <b>${INSTALL_PROMPT ? "拿到了" : "没拿到"}</b>`,
+    `提示模式: ${v.mode}`,
+    `SW控制 : ${yn(!!navigator.serviceWorker.controller)}`,
+    `---UA---`,
+    ua,
+  ].join("<br>");
 }
 
 function saveSettings() {
@@ -966,10 +1001,24 @@ function isInAppBrowser() {
     .test(navigator.userAgent);
 }
 
-// 这个浏览器有没有可能装上
-function canInstallHere() {
-  if (isInAppBrowser()) return false;
-  return /Chrome|CriOS|EdgA|SamsungBrowser|OPR\//i.test(navigator.userAgent);
+// 各浏览器的菜单按钮**不在同一个地方** —— 位置写错，等于让人去找一个不存在的东西。
+// 这条踩过两次：先给内置浏览器写了 Chrome 的「右上角 ⋮」，
+// 又给 Edge 写了右上角（**Edge 安卓的菜单在右下角**）。
+// 所以：只写核实过的位置；没核实过的**不写位置**，只说菜单里找什么。
+function menuHint() {
+  const ua = navigator.userAgent;
+  const item = `「<b>安装应用</b>」或「<b>添加到主屏幕</b>」`;
+  // Edge 安卓：右下角 ⋯（微软官方文档明确写 bottom right corner）
+  if (/EdgA?\//i.test(ua))
+    return `<b>装到桌面</b>：点<b>右下角</b>的 <b>⋯</b>，找 ${item}`;
+  // Chrome 安卓：右上角 ⋮。
+  // ⚠ 必须排除「套壳 Chrome」——三星/Opera/UC 这些 UA 里**也带 Chrome 字样**，
+  //   但菜单位置不一样。不排除的话它们会掉进这个分支被指错方向。
+  if (/Chrome/i.test(ua) &&
+      !/SamsungBrowser|OPR\/|Opera|UCBrowser|Quark|MiuiBrowser|XiaoMi|HuaweiBrowser|MQQBrowser|VivoBrowser|HeyTapBrowser/i.test(ua))
+    return `<b>装到桌面</b>：点<b>右上角</b>的 <b>⋮</b>，找 ${item}`;
+  // 没核实过位置的别瞎指（三星/Opera/国产浏览器…）
+  return `<b>装到桌面</b>：在「<b>${browserName()}</b>」的菜单里找 ${item}`;
 }
 
 // 该显示什么 —— 文案和「能不能装」必须一起算出来，
@@ -986,13 +1035,7 @@ function installVerdict() {
     return { mode: "blocked",
              hint: `<b>${browserName()}里装不了</b>：复制网址，用 <b>Chrome</b> 打开再装` };
   }
-  if (!canInstallHere()) {
-    // Firefox 这类：能装，但菜单叫法不一样，别武断说人家装不了
-    return { mode: "manual",
-             hint: `<b>装到桌面</b>：在「<b>${browserName()}</b>」的菜单里找<b>安装</b>／<b>添加到主屏幕</b>` };
-  }
-  return { mode: "manual",
-           hint: `<b>装到桌面</b>：右上角 <b>⋮</b> 里找「<b>添加到主屏幕</b>」` };
+  return { mode: "manual", hint: menuHint() };
 }
 
 // mode: "native" | "manual" | "blocked" —— 见 installVerdict()
@@ -1122,7 +1165,11 @@ function boot() {
     navigator.storage.persist().catch(() => {});
   }
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+    // updateViaCache:"none" —— 每次都绕过 HTTP 缓存去检查 sw.js 有没有更新。
+    // 不加的话，Pages 的 max-age=600 会让新版本最多晚 10 分钟才生效。
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" })
+      .then(reg => reg.update().catch(() => {}))
+      .catch(() => {});
   }
 
   // 装到桌面 —— 放在 SW 注册之后，SW 没起来时 Chrome 本来也不会给安装入口

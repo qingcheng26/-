@@ -7,7 +7,7 @@
  * 断网时至少还能打开界面（虽然生成不了草稿）。
  */
 
-const CACHE = "reply-v1";
+const CACHE = "reply-v2";
 const SHELL = [
   "./",
   "./index.html",
@@ -40,7 +40,11 @@ self.addEventListener("fetch", (e) => {
   if (url.origin !== location.origin) return;
 
   e.respondWith(
-    fetch(req)
+    // ⚠ cache:"no-store" 是必须的。
+    //   GitHub Pages 给 html 发的头是 Cache-Control: max-age=600，
+    //   不绕过的话「关掉标签页重新打开」也还是十分钟内的旧版本 ——
+    //   用户会以为我改的东西没生效。
+    fetch(req, { cache: "no-store" })
       .then((resp) => {
         if (resp && resp.ok) {
           const copy = resp.clone();
