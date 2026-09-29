@@ -382,6 +382,14 @@ input:focus,select:focus{border-color:var(--accent)}
       <option value="0">关 —— 我自己挑</option>
     </select>
 
+    <label>切回来时自动读剪贴板</label>
+    <select id="s-autoread">
+      <option value="1">开 —— 复制后切回来就出稿</option>
+      <option value="0">关</option>
+    </select>
+    <div class="hint">开了之后：在聊天里长按复制对方的话 → 切回这里 → 自动出稿。
+      <b>这条不依赖系统分享</b>，Edge 上分享面板不出现时就走它。</div>
+
     <label>常用短语（一行一条）</label>
     <textarea id="s-phrases" rows="4" placeholder="收到&#10;好的&#10;稍等我看看"></textarea>
     <div class="hint">这些<b>不调 AI</b>，点一下直接复制走 —— 秒出、不花钱。
@@ -421,6 +429,7 @@ const DEFAULTS = {
   tone: "reason",
   task: "reply",              // reply | summary | translate
   auto_copy: true,            // 生成完自动把第一条写进剪贴板
+  auto_read: true,            // 切回 App 时自动读剪贴板
   phrases: ["收到", "好的", "稍等我看看", "哈哈哈", "在忙，一会儿回你"],
 };
 const LS_CFG = "reply.cfg.v1";
@@ -960,7 +969,10 @@ let CFG = loadCfg();
 let THREAD = loadThread();
 let HIST = loadHist();
 let BUSY = false;
-let LAST_COPIED = "";   // 刚复制走的草稿，别被当成「对方的话」再抓回来
+// 刚复制走的草稿，别被当成「对方的话」再抓回来
+let LAST_COPIED = "";
+// 已经自动读过一次的剪贴板内容 —— 防止切回来反复重复同一段
+let AUTO_READ_DONE = "";
 
 const $ = id => document.getElementById(id);
 const el = {
@@ -974,7 +986,7 @@ const el = {
 };
 
 // 改代码时顺手更新这个 —— 用户报「装不上」时看设置里的这行就知道他跑的哪版
-const APP_VERSION = "2026-09-29d";
+const APP_VERSION = "2026-09-29e";
 
 function setStatus(text, kind) {
   el.status.textContent = text || "";
@@ -1258,6 +1270,37 @@ async function readClipboard() {
   setStatus("读到了，点下面「生成回复」", "ok");
 }
 
+/* ---- 切回 App 时自动读剪贴板并生成 ----
+   这是**不依赖系统分享**的那条快路：
+     复制对方的话 → 切回回复助手 → 自动出稿
+   Edge 安卓对 share_target 的支持查不到明确说法（分享面板里不出现大概率就是它不支持），
+   这条路只要有 https + 一次剪贴板授权就能走。 */
+
+async function autoReadClipboard() {
+  if (!CFG.auto_read) return;
+  if (BUSY) return;
+  if (document.getElementById("dlg").open || $("hdlg").open) return;
+  if (!navigator.clipboard || !navigator.clipboard.readText) return;
+
+  let text = "";
+  try {
+    // 注意：**这里不 catch 完就 return** —— 第一次会弹授权框，
+    // 用户拒绝或系统不给就静默放弃，**不能报错**（那会让人以为程序坏了）。
+    text = (await navigator.clipboard.readText() || "").trim();
+  } catch (e) { return; }
+
+  if (!text) return;
+  if (text.length > 4000) return;                       // 太长的大概率不是聊天消息
+  if (LAST_COPIED && text === LAST_COPIED.trim()) return; // 自己刚复制出去的草稿
+  if (text === AUTO_READ_DONE) return;                  // 同一段不重复处理
+  if (el.input.value.trim() === text) return;           // 已经在输入框里了
+
+  AUTO_READ_DONE = text;
+  el.input.value = text;
+  setStatus("读到剪贴板的内容，正在生成…", "info");
+  generate();
+}
+
 async function generate() {
   if (BUSY) { setStatus("正在生成中，等这次回来再换…", "warn"); return; }
 
@@ -1355,6 +1398,7 @@ function openSettings() {
   $("s-model").value = CFG.model || "deepseek-flash";
   $("s-n").value = String(CFG.drafts || 3);
   $("s-auto").value = CFG.auto_copy ? "1" : "0";
+  $("s-autoread").value = CFG.auto_read ? "1" : "0";
   $("s-phrases").value = (CFG.phrases || []).join("\n");
   el.ver.innerHTML = buildDiag();
   $("dlg").showModal();
@@ -1388,6 +1432,7 @@ function saveSettings() {
     model: $("s-model").value,
     drafts: parseInt($("s-n").value, 10) || 3,
     auto_copy: $("s-auto").value === "1",
+    auto_read: $("s-autoread").value === "1",
     phrases: phrases.length ? phrases : DEFAULTS.phrases,
   }));
   $("dlg").close();
@@ -1449,10 +1494,12 @@ function isInAppBrowser() {
     .test(navigator.userAgent);
 }
 
-/* ---- 分享面板固定提示 ----
-   安卓分享面板里 App 一多，「回复助手」会排到后面，每次都要滑半天找。
-   安卓 12+ 可以**长按**目标图标把它固定到最前面。
-   这条零成本、体感最大 —— 但绝大多数人不知道有这个功能。 */
+/* ---- 装好之后的引导 ----
+   ⚠ Edge 安卓对 share_target 的支持**查不到明确说法**
+   （Web 平台特性表里只有「Edge 桌面 89」，没有 Edge 安卓那一行；
+   用户实测分享面板里也确实不出现）。
+   所以在 Edge 上别再提分享 —— 改教他走「复制 → 切回来自动出稿」那条路，
+   那条不依赖分享，只要有 https + 一次剪贴板授权就行。 */
 
 const LS_NOPIN = "reply.nopin.v1";
 
@@ -1462,10 +1509,16 @@ function maybeShowPinTip() {
   try { if (localStorage.getItem(LS_NOPIN)) return; } catch (e) {}
   if (!isAndroid12Plus()) return;
 
-  // 装好了、还没提示过 —— 用「状态栏」说一句就够，不弹窗打断
+  const edge = /EdgA?\//i.test(navigator.userAgent);
+
   setTimeout(() => {
     if (BUSY) return;
-    setStatus("小技巧：在分享面板里长按「回复助手」可以固定到最前面，以后不用每次找", "info");
+    setStatus(edge
+      // Edge 安卓：明说分享那条走不通，给能走通的那条
+      ? "用 Edge 的话分享面板里可能找不到本应用 —— 直接长按复制对方的话，" +
+        "切回这里会自动出稿"
+      : "小技巧：在分享面板里长按「回复助手」可以固定到最前面，以后不用每次找",
+      "info");
     try { localStorage.setItem(LS_NOPIN, "1"); } catch (e) {}
   }, 2600);
 }
@@ -1650,6 +1703,17 @@ function boot() {
   } else if (qTask || qTone) {
     // 从快捷菜单进来的：清掉参数，免得刷新又跳一次
     history.replaceState(null, "", location.pathname);
+  }
+
+  // 切回 App 时自动读剪贴板 —— 不依赖系统分享的那条快路。
+  // 分享进来那次已经直接 generate 了，别重复。
+  if (!shared) {
+    document.addEventListener("visibilitychange", () => {
+      // 要一小段延迟：刚切回来时剪贴板 API 可能还没就绪
+      if (document.visibilityState === "visible") {
+        setTimeout(() => { autoReadClipboard(); }, 350);
+      }
+    });
   }
 
   if (navigator.storage && navigator.storage.persist) {
