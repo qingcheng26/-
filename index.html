@@ -902,8 +902,19 @@ function parseChatLog(text) {
     if (m) {
       const who = m[1].trim();
       const what = m[2].trim();
-      // 有名字但没内容（比如「张三：」后面换行）→ 不算一条
-      if (what) {
+      // `https://…` 这种裸网址会被上面的正则误当成「说话人 https」。
+      // 聊天记录里网址常常独占一行，不挡住的话 `https:` 会被切掉
+      // （正文变成 `//example.com`），还平白多出一个说话人，
+      // 把「只有一个说话人」的正文误判成对话。
+      if (what.startsWith("//")) {
+        // 落下去当普通正文
+      } else if (!what) {
+        // 有名字但没内容（「我：」后面换行 / 空消息）——
+        // 只把这个人记进名单，**不能当成续行接到上一条后面**：
+        // 那样上一条会变成「材料我放桌上了\n我：」，把标签混进正文。
+        speakers.add(who);
+        continue;
+      } else {
         speakers.add(who);
         matched++;
         out.push({ role: ME_LABELS.test(who) ? "me" : "them", text: what });
@@ -1417,7 +1428,7 @@ const el = {
 };
 
 // 改代码时顺手更新这个 —— 用户报「装不上」时看设置里的这行就知道他跑的哪版
-const APP_VERSION = "2026-09-29h";
+const APP_VERSION = "2026-09-29i";
 
 function setStatus(text, kind) {
   el.status.textContent = text || "";
