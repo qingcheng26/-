@@ -46,6 +46,39 @@ header .sub{font-size:11px;color:var(--dim);margin-left:auto;margin-right:4px}
 }
 .iconbtn:active{background:rgba(60,78,116,.7)}
 
+/* ---------- 装到桌面 ---------- */
+.install{
+  display:flex;align-items:center;gap:11px;margin:0 0 13px;padding:11px 10px 11px 12px;
+  border:1px solid rgba(125,211,252,.42);border-radius:15px;
+  background:linear-gradient(135deg,rgba(37,99,235,.28),rgba(14,116,144,.16) 55%,rgba(18,24,43,.9));
+  box-shadow:0 10px 26px -16px rgba(56,140,255,.95);position:relative;overflow:hidden;
+}
+/* 左上角一道高光，让卡片不那么平 */
+.install::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(120px 60px at 8% 0%,rgba(125,211,252,.22),transparent 70%);
+}
+.install[hidden]{display:none}
+.install .iav{
+  flex:none;width:38px;height:38px;border-radius:11px;object-fit:cover;
+  border:1px solid rgba(125,211,252,.4);box-shadow:0 3px 10px -4px rgba(0,0,0,.7);
+}
+.install .itxt{flex:1;font-size:12.5px;line-height:1.5}
+.install .itxt b{color:var(--accent);font-weight:600}
+.install .ibtn{
+  flex:none;min-height:0;padding:9px 15px;border:none;border-radius:10px;
+  background:linear-gradient(135deg,#2563eb,#0e7490);color:#fff;
+  font-size:13px;font-weight:600;white-space:nowrap;
+  box-shadow:0 4px 12px -5px rgba(56,140,255,.9);
+}
+.install .ibtn:active:not(:disabled){filter:brightness(1.15)}
+.install .ix{
+  flex:none;align-self:flex-start;min-height:0;width:22px;height:22px;padding:0;
+  border:none;border-radius:7px;background:transparent;color:var(--dim);
+  font-size:15px;line-height:1;opacity:.7;
+}
+.install .ix:active{background:rgba(60,78,116,.7);opacity:1}
+
 /* ---------- 语气 ---------- */
 .tones{display:flex;gap:7px;overflow-x:auto;padding:2px 0 10px;
   scrollbar-width:none;-webkit-overflow-scrolling:touch}
@@ -170,6 +203,13 @@ input:focus,select:focus{border-color:var(--accent)}
     <div class="sub" id="tier"></div>
     <button class="iconbtn" id="btn-set" aria-label="设置">⚙</button>
   </header>
+
+  <div class="install" id="install" hidden>
+    <img class="iav" id="install-av" alt="" src="icon-192.png">
+    <div class="itxt" id="install-txt"></div>
+    <button class="ibtn" id="install-go" hidden>安装</button>
+    <button class="ix" id="install-x" aria-label="不再提示">×</button>
+  </div>
 
   <div class="tones" id="tones"></div>
 
@@ -579,6 +619,8 @@ const el = {
   tones: $("tones"), status: $("status"), turns: $("turns"), tn: $("tn"),
   input: $("input"), drafts: $("drafts"), cost: $("cost"), tier: $("tier"),
   go: $("btn-go"), inLabel: $("inLabel"), avatar: $("avatar"),
+  install: $("install"), installTxt: $("install-txt"),
+  installGo: $("install-go"), installX: $("install-x"),
 };
 
 function setStatus(text, kind) {
@@ -859,6 +901,80 @@ function saveSettings() {
   setStatus("设置已保存", "ok");
 }
 
+/* ---- 装到手机桌面 ---- */
+
+// 用户点过「×」就记住，别再烦他
+const LS_NOINSTALL = "reply.noinstall.v1";
+
+let INSTALL_PROMPT = null;      // 安卓 Chrome/Edge 给的原生安装句柄
+let INSTALL_READY = false;      // boot 里 UI 接好了没
+
+function isStandalone() {
+  return matchMedia("(display-mode: standalone)").matches ||
+         matchMedia("(display-mode: minimal-ui)").matches ||
+         navigator.standalone === true;
+}
+
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+         // iPadOS 13+ 的 UA 跟 macOS 一样，靠触点数区分
+         (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function showInstall(html, withBtn) {
+  el.installTxt.innerHTML = html;
+  el.installGo.hidden = !withBtn;
+  el.install.hidden = false;
+}
+
+function hideInstall() { el.install.hidden = true; }
+
+function closeInstall(forGood) {
+  hideInstall();
+  if (forGood) { try { localStorage.setItem(LS_NOINSTALL, "1"); } catch (e) {} }
+}
+
+// 没走过 beforeinstallprompt 的浏览器（iOS、Firefox）只能教用户手动加
+function manualHint() {
+  return isIOS()
+    ? `<b>装到桌面</b>：点底部「分享」→「<b>添加到主屏幕</b>」`
+    : `<b>装到桌面</b>：右上角 <b>⋮</b> 里找「<b>添加到主屏幕</b>」`;
+}
+
+// ⚠ 必须在脚本一开头就挂上：这个事件可能在 DOMContentLoaded 之前就触发，
+//   挂在 boot() 里会漏掉，那就只能退化成手动提示了。
+window.addEventListener("beforeinstallprompt", e => {
+  e.preventDefault();                    // 拦下 Chrome 自带的横幅，换成页内这个
+  INSTALL_PROMPT = e;
+  if (INSTALL_READY) {
+    showInstall("<b>装到桌面</b>：变成独立 App，长按消息能直接分享过来", true);
+  }
+});
+
+window.addEventListener("appinstalled", () => { closeInstall(true); });
+
+function initInstall() {
+  INSTALL_READY = true;
+  if (isStandalone()) return;                              // 已经是 App 了
+  try { if (localStorage.getItem(LS_NOINSTALL)) return; } catch (e) {}
+
+  el.installX.onclick = () => closeInstall(true);
+  el.installGo.onclick = async () => {
+    if (!INSTALL_PROMPT) return;
+    INSTALL_PROMPT.prompt();                               // 弹系统安装框
+    const { outcome } = await INSTALL_PROMPT.userChoice;
+    INSTALL_PROMPT = null;                                 // 句柄只能用一次
+    closeInstall(outcome === "accepted");
+  };
+
+  // 事件已经来过了 → 亮原生按钮；还没来 → 先给手动步骤（晚点来了会自动升级）
+  if (INSTALL_PROMPT) {
+    showInstall("<b>装到桌面</b>：变成独立 App，长按消息能直接分享过来", true);
+  } else {
+    showInstall(manualHint(), false);
+  }
+}
+
 /* ---- 启动 ---- */
 
 function boot() {
@@ -900,6 +1016,9 @@ function boot() {
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
+
+  // 装到桌面 —— 放在 SW 注册之后，SW 没起来时 Chrome 本来也不会给安装入口
+  initInstall();
 }
 
 document.addEventListener("DOMContentLoaded", boot);
