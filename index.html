@@ -91,6 +91,26 @@ header .sub{font-size:11px;color:var(--dim);margin-left:auto;margin-right:4px}
 }
 .install .ix:active{background:rgba(60,78,116,.7);opacity:1}
 
+/* ---------- 任务（回复/摘要/翻译）----------
+   做成收敛的分段控件，比语气档低一级 —— 它改的是「干什么」，
+   语气档改的是「怎么说」，两者不该长得一样重。 */
+.tasks{
+  display:inline-flex;gap:0;margin:2px 0 9px;padding:3px;
+  border-radius:11px;border:1px solid rgba(120,170,255,.2);
+  background:rgba(13,19,36,.72);
+}
+.tasks[hidden]{display:none}
+.tasks button{
+  flex:none;min-height:0;padding:6px 15px;border:none;border-radius:8px;
+  background:transparent;color:var(--dim);font-size:13px;
+  transition:background .14s,color .14s;
+}
+.tasks button:active{background:rgba(60,78,116,.55)}
+.tasks button[aria-pressed="true"]{
+  background:rgba(37,99,235,.85);color:#fff;font-weight:600;
+  box-shadow:0 3px 10px -5px rgba(56,140,255,.9);
+}
+
 /* ---------- 语气 ---------- */
 .tones{display:flex;gap:7px;overflow-x:auto;padding:2px 0 10px;
   scrollbar-width:none;-webkit-overflow-scrolling:touch}
@@ -128,6 +148,12 @@ header .sub{font-size:11px;color:var(--dim);margin-left:auto;margin-right:4px}
 .bub.them span{background:var(--them);border-bottom-left-radius:4px}
 .bub.me{justify-content:flex-end}
 .bub.me span{background:var(--me);border-bottom-right-radius:4px}
+/* 摘要/翻译：整段平铺，不做左右分（那段文本没有「谁说的」） */
+.bub.flat{justify-content:stretch}
+.bub.flat span{
+  flex:1;background:rgba(30,40,64,.72);border-radius:10px;
+  font-size:13.5px;color:#cddcf5;
+}
 /* 聊天档不用在这里再翻一次左右 —— 渲染时已经把 class 换过了
    （见 renderThread 里的 `mine = chat ? t.role==="them" : ...`）。
    两边都翻等于翻两次，正好抵消回错的。**踩过。** */
@@ -155,6 +181,22 @@ button.primary{
 }
 button.primary:active:not(:disabled){filter:brightness(1.15)}
 
+/* ---------- 快捷短语 ----------
+   聊天里一大半回复是「收到」「好的」这种 —— 那些不该调 AI：
+   秒出、免费、不用等。放在 AI 草稿**上方**，因为它先到。 */
+.phrases{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 10px}
+.phrases[hidden]{display:none}
+.phrases button{
+  flex:none;min-height:0;padding:8px 14px;border-radius:999px;
+  border:1px solid rgba(120,170,255,.3);background:rgba(30,40,64,.75);
+  color:var(--text);font-size:13.5px;transition:background .12s;
+}
+.phrases button:active{background:rgba(56,120,190,.9);border-color:var(--accent)}
+.phrases .plabel{
+  flex:none;align-self:center;font-size:11px;color:var(--dim);
+  margin-right:1px;letter-spacing:.5px;
+}
+
 /* ---------- 草稿 ---------- */
 .draft{
   border:1px solid rgba(120,170,255,.22);border-radius:13px;
@@ -169,6 +211,53 @@ button.primary:active:not(:disabled){filter:brightness(1.15)}
   position:absolute;right:10px;bottom:9px;font-size:11px;color:var(--accent);
   border:1px solid rgba(125,211,252,.4);border-radius:8px;padding:3px 9px;
 }
+/* 生成完自动复制的那一条 —— 让用户一眼知道「这条已经在你剪贴板里了」 */
+.draft.autocopied{
+  border-color:var(--ok);
+  background:rgba(34,58,52,.82);
+  box-shadow:0 0 0 1px rgba(74,222,128,.18),0 6px 18px -12px rgba(74,222,128,.9);
+}
+.draft.autocopied .cp{
+  color:var(--ok);border-color:rgba(74,222,128,.5);font-weight:600;
+}
+.draft.autocopied .cp::after{content:" ✓"}
+
+/* ---------- 底部一行（花费 + 历史入口）---------- */
+.footline{
+  display:flex;align-items:center;justify-content:center;gap:12px;
+  padding:6px 0 2px;min-height:22px;
+}
+.footline #cost{font-size:11px;color:#4a5878;text-align:center}
+.histbtn{
+  flex:none;min-height:0;padding:4px 11px;border-radius:999px;
+  border:1px solid rgba(120,170,255,.22);background:transparent;
+  color:#5b6b8c;font-size:11px;
+}
+.histbtn:active{background:rgba(60,78,116,.6);color:var(--text)}
+
+/* ---------- 历史 ---------- */
+.sheet h3 .hn{font-size:11px;color:var(--dim);font-weight:400;margin-left:7px}
+.hlist{max-height:52vh;overflow-y:auto;margin-top:12px;
+  -webkit-overflow-scrolling:touch}
+.hlist .hempty{color:var(--dim);font-size:13px;padding:18px 0;text-align:center}
+.hitem{
+  border:1px solid rgba(120,170,255,.18);border-radius:11px;
+  background:rgba(30,40,64,.6);padding:9px 11px;margin-bottom:8px;cursor:pointer;
+}
+.hitem:active{background:rgba(42,56,88,.92);border-color:var(--accent)}
+.hitem .hmeta{
+  font-size:10.5px;color:var(--dim);display:flex;gap:7px;margin-bottom:5px;
+  align-items:center;
+}
+.hitem .hmeta .htag{
+  border:1px solid rgba(125,211,252,.32);border-radius:5px;
+  padding:0 5px;color:var(--accent);font-size:10px;
+}
+.hitem .hin{
+  font-size:12px;color:#9fb2d0;margin-bottom:5px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.hitem .hout{font-size:13px;color:var(--text);line-height:1.5}
 
 /* ---------- 状态 ---------- */
 .status{
@@ -232,6 +321,7 @@ input:focus,select:focus{border-color:var(--accent)}
     <button class="ix" id="install-x" aria-label="不再提示">×</button>
   </div>
 
+  <div class="tasks" id="tasks"></div>
   <div class="tones" id="tones"></div>
 
   <div class="status" id="status"></div>
@@ -253,9 +343,13 @@ input:focus,select:focus{border-color:var(--accent)}
     生成回复
   </button>
 
+  <div id="phrases" class="phrases"></div>
+
   <div id="drafts"></div>
-  <div style="text-align:center;font-size:11px;color:#4a5878;padding:6px 0 2px"
-       id="cost"></div>
+  <div class="footline">
+    <span id="cost"></span>
+    <button class="histbtn" id="btn-hist">历史</button>
+  </div>
 </div>
 
 <dialog id="dlg">
@@ -282,12 +376,34 @@ input:focus,select:focus{border-color:var(--accent)}
       <option value="5">5 条</option>
     </select>
 
+    <label>生成完自动复制第 1 条</label>
+    <select id="s-auto">
+      <option value="1">开 —— 省掉点一下</option>
+      <option value="0">关 —— 我自己挑</option>
+    </select>
+
+    <label>常用短语（一行一条）</label>
+    <textarea id="s-phrases" rows="4" placeholder="收到&#10;好的&#10;稍等我看看"></textarea>
+    <div class="hint">这些<b>不调 AI</b>，点一下直接复制走 —— 秒出、不花钱。
+      适合「收到」「好的」这类天天要发的。</div>
+
     <!-- 诊断信息：装不上时截图这一块给我，比来回猜快得多 -->
     <div class="ver" id="ver"></div>
 
     <div class="row" style="margin-top:18px">
       <button class="ghost" id="s-cancel">取消</button>
       <button class="primary" id="s-save">保存</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="hdlg">
+  <div class="sheet">
+    <h3>历史<span class="hn" id="hn"></span></h3>
+    <div class="hlist" id="hist-list"></div>
+    <div class="row" style="margin-top:16px">
+      <button class="ghost" id="h-clear">清空历史</button>
+      <button class="primary" id="h-close">关闭</button>
     </div>
   </div>
 </dialog>
@@ -303,6 +419,9 @@ const DEFAULTS = {
   model: "deepseek-flash",
   drafts: 3,
   tone: "reason",
+  task: "reply",              // reply | summary | translate
+  auto_copy: true,            // 生成完自动把第一条写进剪贴板
+  phrases: ["收到", "好的", "稍等我看看", "哈哈哈", "在忙，一会儿回你"],
 };
 const LS_CFG = "reply.cfg.v1";
 const LS_THREAD = "reply.thread.v1";
@@ -351,6 +470,50 @@ const TONES = {
 };
 const TONE_ORDER = ["warm", "reason", "snark", "sarcasm", "chat"];
 
+/* ============================================================ 任务类型
+   同一套 UI / 解析 / 计价，只换提示词。选「回复」时才需要语气档，
+   摘要和翻译跟语气无关 —— 所以它们的 tone 栏是隐藏的。 */
+
+const TASKS = {
+  reply:     { label: "回复", needsTone: true,
+               hint: "对方说了什么" },
+  summary:   { label: "摘要", needsTone: false,
+               hint: "要总结的内容" },
+  translate: { label: "翻译", needsTone: false,
+               hint: "要翻译的内容" },
+};
+const TASK_ORDER = ["reply", "summary", "translate"];
+
+// 每种任务自己的铁律和输出格式 —— 除这三段外，剩下那套（不许编造、只输出 JSON）
+// 三种任务共用。
+const TASK_PROMPTS = {
+  summary: {
+    opening: (n) => "用户会给你一段可能很长的文字（群聊记录、通知、文章、公告）。" +
+      `你要写出 ${n} 条**摘要**，每条都让他一眼看懂这段在说什么。`,
+    rule1: "**1. 只写原文里有的。** 不要补充背景、不要推测原因、不要替作者下结论。" +
+      "原文没说的就是不说 —— 摘要编出来的东西比原文还难查。",
+    rule2: "**2. 每条摘要都要能独立看懂。** 出现「他」「这个」「上面说的」这种指代时，" +
+      "改成人名/事名。人称、时间、数字照抄原文，别换算、别约等于。",
+    shape: (n) => `**几条什么样的**：第 1 条最短，一句话说清「讲了什么」（不超过 40 字）；` +
+      `后面 ${Math.max(n - 1, 1)} 条各说一个**具体的**要点（谁、什么时候、要做什么、` +
+      "什么数）。不要写成「内容涉及多个方面」这种空话。",
+    why: "一句话说明这条抓的是哪部分",
+  },
+  translate: {
+    opening: (n) => "用户会给你一段文字，你要把它翻译出来。" +
+      `给出 ${n} 个译法，让他挑。`,
+    rule1: "**1. 忠实原文。** 不增删、不解释、不替他润色观点。" +
+      "原文是脏话/骂人/冒犯性的，**照实翻译**，不要美化成客气话 —— " +
+      "他需要知道对方实际说了什么。",
+    rule2: "**2. 译入语要自然。** 不要逐字硬译的「翻译腔」。" +
+      "中文原文转英文时注意时态和单复数；英文原文转中文时该拆句就拆句。",
+    shape: (n) => `**${n} 条的区别**：第 1 条**直译**（贴着原文结构，适合你要核对原意时）；` +
+      "后面的做**意译**，按不同场景各来一版 —— 比如口语化的、正式的、" +
+      "或更短的。每条末尾用括号标一下它适合什么场合。",
+    why: "一句话说明这条的取向（直译/口语/正式/更短…）",
+  },
+};
+
 // 「聊天」档的人设。取自社区二创「大肥鱼」（DeepSeek 鲸鱼娘），
 // 来源 https://github.com/YunYueSama/codex-deepseek-pet —— 不是 DeepSeek 官方角色。
 // 每条都是有原因的，别随手精简（跟 PC 版同一份，见 reply/brain.py）。
@@ -389,7 +552,36 @@ const BOUNDARY = "可以尖锐、可以刻薄，但**不得**出现：脏话、�
 const BOUNDARY_CHAT = "不出现脏话、人身攻击、威胁、歧视性言论。" +
   "也不用靠贬低别人来显得亲近 —— 包括拿用户自己开玩笑，除非他自己先开的。";
 
-function systemPrompt(tone, n) {
+function systemPrompt(tone, n, task) {
+  task = task || "reply";
+
+  // 摘要 / 翻译：跟语气无关，各自一套
+  if (task !== "reply") {
+    const tp = TASK_PROMPTS[task];
+    const label = TASKS[task].label;
+    return `${tp.opening(n)}
+
+## 铁律（违反即为失败）
+
+${tp.rule1}
+
+${tp.rule2}
+
+${tp.shape(n)}
+
+**3. 只输出 JSON**，不要任何其它文字。格式：
+
+{"drafts": [{"text": "正文", "why": "${tp.why}"}]}
+
+\`text\` 是要给用户的内容本身 —— 不要写「摘要：」「译文：」这种前缀，
+也不要加引号包裹。用户会原样复制走。
+
+## 边界
+
+不出现脏话、人身攻击、威胁、歧视性言论（**除非是忠实翻译原文**）。
+这是「${label}」任务，不要跑去回答原文里提出的问题，也不要对原文表态。`;
+  }
+
   const t = TONES[tone] || TONES.reason;
   const label = t[0], desc = t[1];
   const chat = tone === "chat";
@@ -441,7 +633,16 @@ ${rule2}
 ${boundary}`;
 }
 
-function turnsPrompt(turns, tone) {
+function turnsPrompt(turns, tone, task) {
+  task = task || "reply";
+
+  // 摘要/翻译：输入是「一段要处理的文本」，不是对话，别按对话格式拼
+  if (task !== "reply") {
+    const body = turns.map(t => t.text).join("\n");
+    const what = task === "summary" ? "要总结的内容" : "要翻译的内容";
+    return `${what}（原样给出，不要改动）：\n\n${body}`;
+  }
+
   // 聊天档的角色名要换 —— 那里没有「对方」，是用户和你在说话
   const chat = tone === "chat";
   const them = chat ? "用户" : "对方";
@@ -550,21 +751,143 @@ function estimateCost(model, prompt, completion, cached) {
   return (cached * p[0] + miss * p[1] + completion * p[2]) / 1e6;
 }
 
+/* ============================================================ 快捷短语
+   聊天里很大一部分回复是「收到」「好的」「哈哈哈」—— 这些调 AI 反而更慢更贵。
+   短语**立刻**出现，AI 草稿几秒后淡入，两者并列，想让用户先看见短语。 */
+
+function renderPhrases() {
+  // 摘要/翻译不是「回话」，短语没有意义
+  const flat = (CFG.task || "reply") !== "reply";
+  const list = (CFG.phrases || []).filter(s => String(s).trim());
+  el.phrases.hidden = flat || !list.length;
+  el.phrases.innerHTML = "";
+  if (el.phrases.hidden) return;
+
+  const lab = document.createElement("span");
+  lab.className = "plabel";
+  lab.textContent = "常用";
+  el.phrases.appendChild(lab);
+
+  for (const p of list) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = p;
+    // 点一下 = 复制走。**不调 API，不花钱，不用等。**
+    b.onclick = () => useDraft(p, b, b);
+    el.phrases.appendChild(b);
+  }
+}
+
+/* ============================================================ 历史
+   每次成功的生成记一条。**只存本机**，跟对话分开 ——
+   「清空对话」不该顺手把历史也删了（那是两件事）。 */
+
+const LS_HIST = "reply.hist.v1";
+const HIST_MAX = 50;
+
+function loadHist() {
+  try {
+    const a = JSON.parse(localStorage.getItem(LS_HIST) || "[]");
+    return Array.isArray(a) ? a.filter(h => h && Array.isArray(h.drafts) && h.drafts.length) : [];
+  } catch (e) { return []; }
+}
+function saveHist(h) {
+  try { localStorage.setItem(LS_HIST, JSON.stringify(h.slice(0, HIST_MAX))); } catch (e) {}
+}
+
+/** 记一条。存的是**输入 + 结果**，不是一个孤零零的输出 ——
+ *  否则用户回头看不知道这条是回什么的。 */
+function pushHist(task, tone, input, drafts) {
+  if (!drafts || !drafts.length) return;
+  HIST.unshift({
+    ts: Date.now() / 1000,
+    task,
+    tone: (TASKS[task] && TASKS[task].needsTone) ? tone : "",
+    input: (input || "").slice(0, 300),
+    drafts: drafts.slice(0, 6).map(d => ({ text: d.text, why: d.why || "" })),
+  });
+  // 内存和存储**一起**截断 —— 只在 saveHist 里截的话，
+  // 不刷新页面的话内存里会一直涨，跟存的对不上。
+  HIST = HIST.slice(0, HIST_MAX);
+  saveHist(HIST);
+}
+
+function fmtWhen(ts) {
+  const d = new Date(ts * 1000);
+  const p = n => String(n).padStart(2, "0");
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  const hm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  return sameDay ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
+
+function renderHist() {
+  el.hn.textContent = HIST.length ? `${HIST.length} 条` : "";
+  el.histList.innerHTML = "";
+  if (!HIST.length) {
+    el.histList.innerHTML = '<div class="hempty">还没有记录</div>';
+    return;
+  }
+  for (const h of HIST) {
+    const it = document.createElement("div");
+    it.className = "hitem";
+
+    const meta = document.createElement("div");
+    meta.className = "hmeta";
+    const tag = document.createElement("span");
+    tag.className = "htag";
+    tag.textContent = (TASKS[h.task] ? TASKS[h.task].label : "回复") +
+      (h.tone && TONES[h.tone] ? " · " + TONES[h.tone][0] : "");
+    meta.appendChild(tag);
+    const when = document.createElement("span");
+    when.textContent = fmtWhen(h.ts);
+    meta.appendChild(when);
+    it.appendChild(meta);
+
+    if (h.input) {
+      const inp = document.createElement("div");
+      inp.className = "hin";
+      inp.textContent = "→ " + h.input.replace(/\s+/g, " ");
+      it.appendChild(inp);
+    }
+    const out = document.createElement("div");
+    out.className = "hout";
+    out.textContent = h.drafts[0].text;
+    it.appendChild(out);
+
+    // 点一条 = 把当时的草稿重新放回主界面，可以直接复制复用
+    it.onclick = () => {
+      $("hdlg").close();
+      showResult({ drafts: h.drafts, cost: 0 }, { noAuto: true });
+      setStatus("这是历史里的一条 —— 点你要的那条复制走", "info");
+    };
+    el.histList.appendChild(it);
+  }
+}
+
+function openHist() {
+  renderHist();
+  $("hdlg").showModal();
+}
+
 /* ============================================================ API */
 
-async function makeDrafts(cfg, turns, tone) {
+async function makeDrafts(cfg, turns, tone, task) {
   const key = (cfg.api_key || "").trim();
   if (!key) return { error: "还没填 API Key —— 点右上角 ⚙ 填上 DeepSeek 的 sk- 密钥" };
 
   const n = parseInt(cfg.drafts, 10) || 3;
   const model = cfg.model || "deepseek-flash";
   const base = (cfg.upstream || DEFAULTS.upstream).replace(/\/+$/, "");
+  task = task || "reply";
+  // 摘要和翻译跟语气无关 —— 别把「回怼」这种档位带进提示词，会干扰输出
+  const useTone = TASKS[task] && TASKS[task].needsTone ? tone : "";
 
   const payload = {
     model,
     messages: [
-      { role: "system", content: systemPrompt(tone, n) },
-      { role: "user", content: turnsPrompt(turns, tone) },
+      { role: "system", content: systemPrompt(useTone, n, task) },
+      { role: "user", content: turnsPrompt(turns, useTone, task) },
     ],
     // 开了 json_object **必须**在提示词里出现 "JSON" 字样，否则模型可能一直吐
     // 空白直到撞 max_tokens，表现为「请求卡住」。systemPrompt 里有，别删。
@@ -635,6 +958,7 @@ async function makeDrafts(cfg, turns, tone) {
 
 let CFG = loadCfg();
 let THREAD = loadThread();
+let HIST = loadHist();
 let BUSY = false;
 let LAST_COPIED = "";   // 刚复制走的草稿，别被当成「对方的话」再抓回来
 
@@ -645,19 +969,53 @@ const el = {
   go: $("btn-go"), inLabel: $("inLabel"), avatar: $("avatar"),
   install: $("install"), installTxt: $("install-txt"),
   installGo: $("install-go"), installX: $("install-x"),
-  ver: $("ver"),
+  ver: $("ver"), tasks: $("tasks"), phrases: $("phrases"),
+  hn: $("hn"), histList: $("hist-list"),
 };
 
 // 改代码时顺手更新这个 —— 用户报「装不上」时看设置里的这行就知道他跑的哪版
-const APP_VERSION = "2026-09-29c";
+const APP_VERSION = "2026-09-29d";
 
 function setStatus(text, kind) {
   el.status.textContent = text || "";
   el.status.className = "status" + (text ? " " + (kind || "info") : "");
 }
 
+// 一次把跟配置有关的面板全部刷一遍
+function renderAll() {
+  renderTasks();
+  renderTones();
+  renderLabel();
+  renderThread();
+  renderPhrases();
+}
+
+function renderTasks() {
+  el.tasks.innerHTML = "";
+  for (const k of TASK_ORDER) {
+    const b = document.createElement("button");
+    b.textContent = TASKS[k].label;
+    b.setAttribute("aria-pressed", String(k === CFG.task));
+    b.onclick = () => {
+      if (CFG.task === k) return;
+      CFG = saveCfg(Object.assign({}, CFG, { task: k }));
+      renderAll();
+      if (THREAD.length) generate();      // 换任务 = 换一种处理，直接重来
+    };
+    el.tasks.appendChild(b);
+  }
+  // 按钮文案跟着任务走 —— 「摘要」档下写着「生成回复」会让人以为点错了
+  el.go.textContent = CFG.task === "reply" ? "生成回复"
+                    : CFG.task === "summary" ? "生成摘要" : "翻译";
+}
+
 function renderTones() {
+  // 摘要/翻译跟语气无关 —— 藏起来，别让用户以为选语气有用
+  const needs = TASKS[CFG.task] ? TASKS[CFG.task].needsTone : true;
+  el.tones.hidden = !needs;
   el.tones.innerHTML = "";
+  if (!needs) return;
+
   for (const k of TONE_ORDER) {
     const b = document.createElement("button");
     b.className = "chip";
@@ -676,6 +1034,14 @@ function renderTones() {
 }
 
 function renderLabel() {
+  const task = CFG.task || "reply";
+  if (task !== "reply") {
+    el.inLabel.textContent = TASKS[task].hint;
+    el.input.placeholder = task === "summary"
+      ? "把要总结的长文粘进来（群聊记录、公告、文章），或点下面的「读取剪贴板」"
+      : "把要翻译的文字粘进来，或点下面的「读取剪贴板」";
+    return;
+  }
   const chat = CFG.tone === "chat";
   el.inLabel.textContent = chat ? "你想对她说什么" : "对方说了什么";
   el.input.placeholder = chat
@@ -684,9 +1050,14 @@ function renderLabel() {
 }
 
 function renderThread() {
-  const chat = CFG.tone === "chat";
+  // 摘要/翻译没有「对话」，只有一段待处理的文本 —— 气泡左右分就没意义了
+  const flat = (CFG.task || "reply") !== "reply";
+  const chat = !flat && CFG.tone === "chat";
+
   el.turns.innerHTML = "";
-  el.tn.textContent = THREAD.length ? `已 ${THREAD.length} 轮` : "";
+  el.tn.textContent = THREAD.length
+    ? (flat ? `已 ${THREAD.length} 段` : `已 ${THREAD.length} 轮`)
+    : "";
   if (!THREAD.length) {
     el.turns.innerHTML = '<div class="empty">还没有内容</div>';
     return;
@@ -696,8 +1067,8 @@ function renderThread() {
     // **聊天档要把 class 换过来**：那一档里 them 是「你对她说的话」，
     // 属于你这边，该靠右（class "me"）。me 是她的回话，该靠左。
     // 注意**只在 JS 这一处换** —— CSS 里再加 .chatmode 覆盖就是翻两次，等于没翻。
-    const mine = chat ? t.role === "them" : t.role === "me";
-    d.className = "bub " + (mine ? "me" : "them");
+    const mine = flat ? false : (chat ? t.role === "them" : t.role === "me");
+    d.className = "bub " + (flat ? "flat" : (mine ? "me" : "them"));
     const s = document.createElement("span");
     s.textContent = t.text;
     d.appendChild(s);
@@ -721,7 +1092,8 @@ function showLoading(n) {
   }
 }
 
-function showResult(res) {
+function showResult(res, opts) {
+  opts = opts || {};
   el.drafts.innerHTML = "";
 
   const bits = [];
@@ -731,6 +1103,7 @@ function showResult(res) {
   el.cost.textContent = bits.join(" · ");
 
   if (res.drafts && res.drafts.length) {
+    let autoIdx = -1;
     if (res.truncated) setStatus("输出被长度限制截断了，下面是原话", "warn");
     else if (res.error) setStatus(res.error, "warn");
     else setStatus("");
@@ -759,10 +1132,38 @@ function showResult(res) {
       c.onclick = () => useDraft(d.text, c, body);
       el.drafts.appendChild(c);
     });
+
+    // 自动把第一条写进剪贴板 —— 省掉「点哪条」这一步。
+    // 其余几条照常显示，改主意了点一下就把剪贴板覆盖掉。
+    // 失败**不报错**（有些浏览器不给非手势写剪贴板），静默退回到「点即复制」。
+    // opts.noAuto：从历史点进来的不自动复制 —— 用户还没挑呢。
+    if (CFG.auto_copy && !opts.noAuto && !res.truncated && !res.error) {
+      autoIdx = 0;
+      autoCopyFirst(res.drafts[0].text);
+    }
     return;
   }
 
   setStatus(res.error || "没有拿到草稿", "bad");
+}
+
+/** 生成完自动复制第一条。
+ *  ⚠ 不能用 copyText()：它内部会 document.execCommand，而在非用户手势里
+ *  调那个会**抢走用户的焦点**（移动端会弹一下输入框），副作用比收益大。
+ *  这里只试标准的异步剪贴板 API，失败就算了。 */
+async function autoCopyFirst(text) {
+  const first = el.drafts.querySelector(".draft");
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error("no api");
+    await navigator.clipboard.writeText(text);
+    LAST_COPIED = text;
+    if (first) first.classList.add("autocopied");
+    setStatus("第 1 条已复制 —— 切回去长按粘贴（想要别的点一下它）", "ok");
+  } catch (e) {
+    // 自动复制不成就**什么都不说** —— 用户照旧点一下也能复制，
+    // 这时候弹一句「自动复制失败」只会让人困惑。
+    if (first) first.classList.remove("autocopied");
+  }
 }
 
 async function copyText(text) {
@@ -795,6 +1196,10 @@ async function copyText(text) {
 /** 复制不成就把人话选中 —— 用户长按选中的字点「复制」就行。
  *  http:// 打开时手机浏览器不给剪贴板权限，这条路是兜底，不是可有可无的。 */
 function selectInCard(card, bodyEl) {
+  // 短语按钮没有可长按选中的正文块 —— 不硬选，交给调用方换文案
+  if (!bodyEl || bodyEl === card || !bodyEl.nodeType || bodyEl.tagName === "BUTTON") {
+    return false;
+  }
   try {
     const range = document.createRange();
     range.selectNodeContents(bodyEl);
@@ -817,6 +1222,13 @@ async function useDraft(text, card, bodyEl) {
     return;   // 没真复制走，就不记进对话
   }
   LAST_COPIED = text;
+
+  // 绿标跟着「最后复制的那条」走 —— 用户改选第 3 条，标记就该挪到第 3 条
+  document.querySelectorAll(".draft.autocopied").forEach(d => d.classList.remove("autocopied"));
+  if (card && card.classList && card.classList.contains("draft")) {
+    card.classList.add("autocopied");
+  }
+
   THREAD.push({ role: "me", text, ts: Date.now() / 1000 });
   saveThread(THREAD);
   renderThread();
@@ -849,13 +1261,15 @@ async function readClipboard() {
 async function generate() {
   if (BUSY) { setStatus("正在生成中，等这次回来再换…", "warn"); return; }
 
+  const task = CFG.task || "reply";
+  const flat = task !== "reply";
   let text = el.input.value.trim();
   if (text) {
-    // 输入框里有新内容就当成一轮新的「对方说的话」
+    // 输入框里有新内容就当成一轮新的输入
     if (!THREAD.length || THREAD[THREAD.length - 1].text !== text
         || THREAD[THREAD.length - 1].role !== "them") {
       if (LAST_COPIED && text === LAST_COPIED.trim()) {
-        setStatus("输入框里是你刚复制的那条草稿 —— 换成对方的新消息", "warn");
+        setStatus("输入框里是你刚复制的那条草稿 —— 换成新的内容", "warn");
         return;
       }
       THREAD.push({ role: "them", text, ts: Date.now() / 1000 });
@@ -865,7 +1279,9 @@ async function generate() {
     }
   }
   if (!THREAD.length) {
-    setStatus("还没有内容 —— 先把对方那句话粘进来，或点「读取剪贴板」", "warn");
+    setStatus(flat
+      ? "还没有内容 —— 先把要处理的文字粘进来，或点「读取剪贴板」"
+      : "还没有内容 —— 先把对方那句话粘进来，或点「读取剪贴板」", "warn");
     return;
   }
 
@@ -882,10 +1298,12 @@ async function generate() {
   }, 1000);
 
   const cfgSnapshot = Object.assign({}, CFG);
-  const thread = THREAD.slice(-12);
+  // 摘要/翻译要看**全文** —— 只带最近几条会让摘要直接漏内容。
+  // 只有「回复」才限轮数（那是在控制上下文长度）。
+  const thread = flat ? THREAD : THREAD.slice(-12);
   let res;
   try {
-    res = await makeDrafts(cfgSnapshot, thread, cfgSnapshot.tone);
+    res = await makeDrafts(cfgSnapshot, thread, cfgSnapshot.tone, task);
   } catch (e) {
     res = { error: "出错了：" + (e && e.message ? e.message : e) , drafts: [] };
   }
@@ -894,6 +1312,28 @@ async function generate() {
   BUSY = false;
   el.go.disabled = false;
   showResult(res);
+
+  // 成功的才记历史 —— 报错的、被截断的都别进（那些是废的，占地方）
+  if (res.drafts && res.drafts.length && !res.error && !res.truncated) {
+    const lastThem = [...THREAD].reverse().find(t => t.role === "them");
+    pushHist(task, cfgSnapshot.tone, lastThem ? lastThem.text : "", res.drafts);
+  }
+
+  // ⚠ 生成完把结果滚进视野。
+  //   从分享进来时，草稿在屏幕**下方**（任务栏/语气栏/对话/输入框都排在前面），
+  //   不滚的话用户看不出东西来 —— 那正好违背了「少点几下」的初衷。
+  scrollToResults();
+}
+
+function scrollToResults() {
+  const first = el.phrases.hidden ? el.drafts : el.phrases;
+  if (!first || !first.getBoundingClientRect) return;
+  try {
+    // block:"start" 让结果顶到屏幕上方，几条草稿一次能看全
+    first.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) {
+    first.scrollIntoView();      // 老浏览器不认 options
+  }
 }
 
 function clearThread() {
@@ -914,6 +1354,8 @@ function openSettings() {
   $("s-up").value = CFG.upstream || DEFAULTS.upstream;
   $("s-model").value = CFG.model || "deepseek-flash";
   $("s-n").value = String(CFG.drafts || 3);
+  $("s-auto").value = CFG.auto_copy ? "1" : "0";
+  $("s-phrases").value = (CFG.phrases || []).join("\n");
   el.ver.innerHTML = buildDiag();
   $("dlg").showModal();
 }
@@ -937,14 +1379,20 @@ function buildDiag() {
 }
 
 function saveSettings() {
+  const phrases = $("s-phrases").value
+    .split("\n").map(s => s.trim()).filter(Boolean).slice(0, 12);
+
   CFG = saveCfg(Object.assign({}, CFG, {
     api_key: $("s-key").value.trim(),
     upstream: $("s-up").value.trim() || DEFAULTS.upstream,
     model: $("s-model").value,
     drafts: parseInt($("s-n").value, 10) || 3,
+    auto_copy: $("s-auto").value === "1",
+    phrases: phrases.length ? phrases : DEFAULTS.phrases,
   }));
   $("dlg").close();
   renderTier();
+  renderAll();
   setStatus("设置已保存", "ok");
 }
 
@@ -999,6 +1447,32 @@ function browserName() {
 function isInAppBrowser() {
   return /MicroMessenger|AlipayClient|DingTalk|Lark|Feishu|Weibo|QQ\/|QQBrowser|UCBrowser|Quark|baidubrowser|BIDUBrowser/i
     .test(navigator.userAgent);
+}
+
+/* ---- 分享面板固定提示 ----
+   安卓分享面板里 App 一多，「回复助手」会排到后面，每次都要滑半天找。
+   安卓 12+ 可以**长按**目标图标把它固定到最前面。
+   这条零成本、体感最大 —— 但绝大多数人不知道有这个功能。 */
+
+const LS_NOPIN = "reply.nopin.v1";
+
+function maybeShowPinTip() {
+  if (!isStandalone()) return;                             // 还没装成 App，先说安装
+  if (isInAppBrowser()) return;
+  try { if (localStorage.getItem(LS_NOPIN)) return; } catch (e) {}
+  if (!isAndroid12Plus()) return;
+
+  // 装好了、还没提示过 —— 用「状态栏」说一句就够，不弹窗打断
+  setTimeout(() => {
+    if (BUSY) return;
+    setStatus("小技巧：在分享面板里长按「回复助手」可以固定到最前面，以后不用每次找", "info");
+    try { localStorage.setItem(LS_NOPIN, "1"); } catch (e) {}
+  }, 2600);
+}
+
+function isAndroid12Plus() {
+  const m = navigator.userAgent.match(/Android\s+(\d+)/i);
+  return !!m && parseInt(m[1], 10) >= 12;
 }
 
 // 各浏览器的菜单按钮**不在同一个地方** —— 位置写错，等于让人去找一个不存在的东西。
@@ -1132,22 +1606,36 @@ function boot() {
   const b64 = document.getElementById("av").textContent.trim();
   el.avatar.src = "data:image/png;base64," + b64;
 
-  renderTones();
-  renderThread();
-  renderLabel();
+  const q = new URLSearchParams(location.search);
+
+  // 桌面图标长按菜单（manifest 的 shortcuts）：?task=summary / ?tone=chat / ?settings=1
+  // 要在 renderAll() 之前处理，否则先按旧配置渲染一遍再跳，会闪。
+  const qTask = q.get("task");
+  if (qTask && TASKS[qTask]) {
+    CFG = saveCfg(Object.assign({}, CFG, { task: qTask }));
+  }
+  const qTone = q.get("tone");
+  if (qTone && TONES[qTone]) {
+    CFG = saveCfg(Object.assign({}, CFG, { tone: qTone, task: "reply" }));
+  }
+  if (q.get("settings")) {
+    history.replaceState(null, "", location.pathname);
+    renderAll();
+    renderTier();
+    wireButtons();
+    initInstall();
+    registerSW();
+    openSettings();
+    return;
+  }
+
+  renderAll();
   renderTier();
   setInterval(renderTier, 60000);
-
-  $("btn-go").onclick = generate;
-  $("btn-paste").onclick = readClipboard;
-  $("btn-clear").onclick = clearThread;
-  $("btn-set").onclick = openSettings;
-  $("s-cancel").onclick = () => $("dlg").close();
-  $("s-save").onclick = saveSettings;
+  wireButtons();
 
   // 分享目标（安卓分享面板）传过来的文字：?text=...
   // 聊天软件一般只给 text；少数会给 title/url，那也是内容的一部分，别丢
-  const q = new URLSearchParams(location.search);
   const sharedText = (q.get("text") || "").trim();
   const sharedRest = [q.get("title"), q.get("url")]
     .map(s => (s || "").trim()).filter(Boolean).join(" ").trim();
@@ -1159,21 +1647,47 @@ function boot() {
     // **直接开始生成**，不再让用户多点一次「生成回复」——
     // 走分享这条路就是为了少点几下，分享完还要再点一下就没意义了。
     generate();
+  } else if (qTask || qTone) {
+    // 从快捷菜单进来的：清掉参数，免得刷新又跳一次
+    history.replaceState(null, "", location.pathname);
   }
 
   if (navigator.storage && navigator.storage.persist) {
     navigator.storage.persist().catch(() => {});
   }
-  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-    // updateViaCache:"none" —— 每次都绕过 HTTP 缓存去检查 sw.js 有没有更新。
-    // 不加的话，Pages 的 max-age=600 会让新版本最多晚 10 分钟才生效。
-    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" })
-      .then(reg => reg.update().catch(() => {}))
-      .catch(() => {});
-  }
+  registerSW();
 
   // 装到桌面 —— 放在 SW 注册之后，SW 没起来时 Chrome 本来也不会给安装入口
   initInstall();
+
+  // 装好之后的分享面板固定提示（只在真机上、且没提示过时冒一次）
+  maybeShowPinTip();
+}
+
+function wireButtons() {
+  $("btn-go").onclick = generate;
+  $("btn-paste").onclick = readClipboard;
+  $("btn-clear").onclick = clearThread;
+  $("btn-set").onclick = openSettings;
+  $("btn-hist").onclick = openHist;
+  $("s-cancel").onclick = () => $("dlg").close();
+  $("s-save").onclick = saveSettings;
+  $("h-close").onclick = () => $("hdlg").close();
+  $("h-clear").onclick = () => {
+    HIST = [];
+    saveHist(HIST);
+    renderHist();
+    setStatus("历史已清空", "info");
+  };
+}
+
+function registerSW() {
+  if (!("serviceWorker" in navigator) || !location.protocol.startsWith("http")) return;
+  // updateViaCache:"none" —— 每次都绕过 HTTP 缓存去检查 sw.js 有没有更新。
+  // 不加的话，Pages 的 max-age=600 会让新版本最多晚 10 分钟才生效。
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" })
+    .then(reg => reg.update().catch(() => {}))
+    .catch(() => {});
 }
 
 document.addEventListener("DOMContentLoaded", boot);

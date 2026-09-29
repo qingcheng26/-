@@ -19,5 +19,31 @@
     "action": "https://qingcheng26.github.io/-/index.html",
     "method": "GET",
     "params": { "text": "text", "title": "title", "url": "url" }
-  }
+  },
+  "shortcuts": [
+    {
+      "name": "聊天（大肥鱼）",
+      "short_name": "聊天",
+      "description": "直接跟大肥鱼说话",
+      "url": "./index.html?tone=chat"
+    },
+    {
+      "name": "总结一段话",
+      "short_name": "摘要",
+      "description": "把长消息缩成几句话",
+      "url": "./index.html?task=summary"
+    },
+    {
+      "name": "翻译",
+      "short_name": "翻译",
+      "description": "把文字译成另一种语言",
+      "url": "./index.html?task=translate"
+    },
+    {
+      "name": "设置",
+      "short_name": "设置",
+      "description": "改 API Key / 短语 / 语气偏好",
+      "url": "./index.html?settings=1"
+    }
+  ]
 }
