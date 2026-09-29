@@ -198,6 +198,19 @@ button.primary:active:not(:disabled){filter:brightness(1.15)}
 }
 
 /* ---------- 草稿 ---------- */
+/* 模型读到的语境 —— 比草稿轻，是「说明」不是「要发的内容」 */
+.read{
+  display:flex;gap:8px;align-items:flex-start;
+  border-left:2px solid rgba(125,211,252,.45);
+  background:rgba(14,116,144,.14);border-radius:0 10px 10px 0;
+  padding:9px 12px;margin-bottom:10px;
+  font-size:12.5px;line-height:1.6;color:#a8bcdc;
+}
+.read .rtag{
+  flex:none;font-size:10.5px;color:var(--accent);
+  border:1px solid rgba(125,211,252,.35);border-radius:5px;
+  padding:1px 6px;margin-top:1px;white-space:nowrap;
+}
 .draft{
   border:1px solid rgba(120,170,255,.22);border-radius:13px;
   background:rgba(30,40,64,.82);padding:12px 13px;margin-bottom:9px;
@@ -561,6 +574,53 @@ const BOUNDARY = "可以尖锐、可以刻薄，但**不得**出现：脏话、�
 const BOUNDARY_CHAT = "不出现脏话、人身攻击、威胁、歧视性言论。" +
   "也不用靠贬低别人来显得亲近 —— 包括拿用户自己开玩笑，除非他自己先开的。";
 
+/* ============================================================ 语境
+   用户抱怨过「只根据字面意思回复」。根因有两个，这段治的是第二个：
+     ① 只粘一句话进来时，**上下文根本不存在** —— App 读不到聊天记录，变不出来
+     ② 上下文在手上时，模型也可能直接按字面答，不去读背后那层意思
+   所以这一段的任务是：**逼它在动笔前先把语境想清楚，并且把判断写出来**
+   （写出来还有个额外好处：读错了用户一眼就能看见，知道后面为什么写偏了）。 */
+
+const REPLY_CONTEXT = `## 先读懂语境，再动笔
+
+你拿到的可能只是孤零零一句话，也可能是一整段对话。**动笔之前先想清楚这五件事**：
+
+1. **这是什么关系** —— 朋友 / 同事 / 上下级 / 家人 / 恋人 / 客户 / 陌生人 / 群聊。
+   从称呼、口气、用词判断。**判断不出来就往稳里写**：别假设很熟、别假设对方不在意、
+   别上来就开玩笑。
+2. **对方字面底下真正想说什么。** 中文里大量话是反的、是半截的，只看字面一定答错：
+   - 「哦」「嗯」「行吧」—— 可能是失望，可能是敷衍，可能是不想再争了
+   - 「随便你」「你看着办」—— 多半是生气，不是真让你定
+   - 「你忙吧」「不打扰你了」—— 多半是觉得被冷落
+   - 「挺好的」「你开心就好」—— 可能是真夸，也可能是阴阳
+   **结合前面的对话、结合你们平时的说话方式判断是哪一种**，不要一律按字面处理。
+3. **对方要的是什么** —— 一个解释？一个态度？一个具体答复？还是只要你别再说了？
+4. **我方之前说过什么、答应过什么、立场是什么。** 回复**不能跟自己前面说过的话打架**。
+5. **用户想要的结果** —— 把事说清 / 缓和关系 / 结束话题 / 争赢 / 婉拒。
+
+**然后：回复要打在「对方真正在表达的意思」上，不是字面上的那几个词。**
+
+## 手里没有的信息，不许当成有
+
+上下文没给的，**不要编出来**：不知道什么关系就按普通关系写，不知道前因就不提前因。
+宁可写得稳一点、短一点，也不要写出一条**依赖某个其实并不存在的事实**的回复。
+
+> 另外：用户可能把一整段聊天记录直接粘进来（常有「张三：」「我：」这种前缀）。
+> 那就按对话来读，分清谁说的，别当成一句话。`;
+
+const CHAT_CONTEXT = `## 先读懂他现在的状态
+
+回话之前先判断：他是在闲聊、在倾诉、在求助，还是只是想找个人说说话？
+他现在什么情绪 —— 累、烦、兴奋、心虚、想被夸、还是只是无聊？
+
+**有情绪的时候先接住情绪，别急着讲道理、别急着给方案。**
+他要是只想吐槽，你给一堆建议反而扫兴；他要真在求助，你就别光顾着卖萌。
+
+## 手里没有的信息，不许当成有
+
+他说的和上下文里没有的，不要编。不知道就直接说不知道。
+**不要假装记得没发生过的事**，也不要顺着他的话编出一个并不存在的事实。`;
+
 function systemPrompt(tone, n, task) {
   task = task || "reply";
 
@@ -595,7 +655,7 @@ ${tp.shape(n)}
   const label = t[0], desc = t[1];
   const chat = tone === "chat";
 
-  let opening, rule1, rule2, boundary, persona;
+  let opening, rule1, rule2, boundary, persona, contextBlock;
   if (chat) {
     opening = "用户会把他想对你说的话（有时是一段对话）交给你，" +
       `你要写出 ${n} 条**你可以直接说出口的回话**。`;
@@ -606,6 +666,7 @@ ${tp.shape(n)}
       "不要加引号包裹，不要编号，不要旁白。用户会原样复制走。";
     boundary = BOUNDARY_CHAT;
     persona = "\n" + PERSONA;
+    contextBlock = CHAT_CONTEXT;
   } else {
     opening = "你是一个中文社交场景的回复助手。" +
       "用户会把对方发来的一句话（有时是一段对话）交给你，" +
@@ -619,12 +680,15 @@ ${tp.shape(n)}
       "这种旁白；不要加引号包裹；不要编号。用户会原样复制走。";
     boundary = BOUNDARY;
     persona = "";
+    contextBlock = REPLY_CONTEXT;
   }
 
   return `${opening}
 
 语气档位：**${label}** —— ${desc}
 ${persona}
+${contextBlock}
+
 ## 铁律（违反即为失败）
 
 ${rule1}
@@ -633,9 +697,13 @@ ${rule2}
 
 **3. 只输出 JSON**，不要任何其它文字。格式：
 
-{"drafts": [{"text": "回复正文", "why": "一句话说明这条为什么这么写"}]}
+{"read": "……", "drafts": [{"text": "回复正文", "why": "一句话说明这条为什么这么写"}]}
 
-\`why\` 用中文，简短，帮用户挑。\`text\` 是要发出去的内容。
+- \`read\`：**先写这个**，一两句话说明你读到的语境 —— 什么关系、对方真正想表达什么、
+  这一轮该达到什么效果。中文。用户会看这一段，**读错了他就知道你后面为什么写偏了**，
+  所以如实写你的判断，**不要复述原话**。
+- \`why\`：这一条为什么这么写、跟其他条的区别在哪。中文，简短，帮用户挑。
+- \`text\`：要发出去的内容。
 
 ## 边界
 
@@ -660,6 +728,74 @@ function turnsPrompt(turns, tone, task) {
   return "最近的对话：\n" + lines.join("\n");
 }
 
+/* ---- 按字符数取最近的一段对话 ----
+   为什么不用「最近 N 条」：一句「嗯」和一段 500 字的吐槽在条数上是一样的，
+   按条数截，长对话里丢掉的恰恰是信息量最大的那几条。
+   DeepSeek 的上下文够大，6000 字只是防跑飞的上限，不会正常触发。
+   代价是**可能从对话中间切开** —— 所以开头补一行说明，别让模型以为那是从头开始。 */
+function tailWithin(turns, maxChars) {
+  const out = [];
+  let used = 0;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const len = String(turns[i].text || "").length;
+    if (used + len > maxChars && out.length) {
+      out.unshift({ role: "them", text: "〔更早的对话已省略〕", ts: 0 });
+      break;
+    }
+    out.unshift(turns[i]);
+    used += len;
+  }
+  return out;
+}
+
+/* ---- 从用户粘进来的文本里认「说话人」----
+   用户经常把一整段聊天记录直接粘进来，长这样：
+       张三：你这个方案行不通
+       我：哪一部分？
+   不认出来的话，模型看到的是「对方」段里混着你自己说的话，
+   会把你自己说过的话当成对方说的 —— 回复必然错位。
+   认出来了就拆成「对方/我方」两路，跟已有对话合并。
+   认不出来就整段当「对方」，跟以前一样。 */
+
+// 「名字：内容」这种行首标签。名字限短一些，免得把正文里
+// 正常的「注意：」也当成说话人。
+const SPEAKER_RE = /^([^\s：:]{1,12})\s*[：:]\s*(.*)$/;
+
+// 这些名字当成「我」—— 用户在转述自己的话时常用
+const ME_LABELS = /^(我|俺|本人|自己|我的|me|i|myself|自己这边)$/i;
+
+function parseChatLog(text) {
+  const lines = String(text || "").split(/\r?\n/);
+  const out = [];
+  const speakers = new Set();
+  let matched = 0;
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) { continue; }
+    const m = line.match(SPEAKER_RE);
+    if (m) {
+      const who = m[1].trim();
+      const what = m[2].trim();
+      // 有名字但没内容（比如「张三：」后面换行）→ 不算一条
+      if (what) {
+        speakers.add(who);
+        matched++;
+        out.push({ role: ME_LABELS.test(who) ? "me" : "them", text: what });
+        continue;
+      }
+    }
+    // 这一行没有标签 —— 接到上一条后面（多行消息）
+    if (out.length) out[out.length - 1].text += "\n" + line;
+    else out.push({ role: "them", text: line });
+  }
+
+  // 至少要两个不同的人，才算「这是一段聊天记录」；
+  // 只有一个人名的，很可能是正文里恰好有个冒号。
+  if (speakers.size < 2 || matched < 2) return { turns: [], labels: [] };
+  return { turns: out, labels: [...speakers] };
+}
+
 /* ============================================================ 解析
    三级兜底，**任何输入都不能把模型输出丢掉**（跟 PC 版同一套逻辑）。 */
 
@@ -681,14 +817,19 @@ function splitLoose(text) {
 
 function draftsFromObj(data, want) {
   let items = null;
+  let read = "";
   if (Array.isArray(data)) items = data;
   else if (data && typeof data === "object") {
+    // 「读到的语境」—— 模型对这段对话的判断，跟草稿一起显示给用户
+    const r = data.read || data.understanding || data.context || data.解读;
+    if (typeof r === "string") read = r.trim();
+
     for (const k of ["drafts", "replies", "results", "data"]) {
       if (Array.isArray(data[k])) { items = data[k]; break; }
     }
     if (items === null && typeof data.text === "string") items = [data];
   }
-  if (!Array.isArray(items)) return [];
+  if (!Array.isArray(items)) return { drafts: [], read };
 
   const out = [];
   for (const it of items) {
@@ -703,18 +844,18 @@ function draftsFromObj(data, want) {
     }
     if (out.length >= want) break;
   }
-  return out;
+  return { drafts: out, read };
 }
 
 function parseDrafts(content, want) {
-  if (!content || !content.trim()) return { drafts: [], degraded: true };
+  if (!content || !content.trim()) return { drafts: [], read: "", degraded: true };
   const text = stripFence(content).trim();
 
   // 一级：干净 JSON
   for (const cand of [text, content.trim()]) {
     try {
-      const d = draftsFromObj(JSON.parse(cand), want);
-      if (d.length) return { drafts: d, degraded: false };
+      const r = draftsFromObj(JSON.parse(cand), want);
+      if (r.drafts.length) return { drafts: r.drafts, read: r.read, degraded: false };
     } catch (e) { /* 继续往下试 */ }
   }
 
@@ -722,15 +863,19 @@ function parseDrafts(content, want) {
   const m = text.match(/\{[\s\S]*\}/);
   if (m) {
     try {
-      const d = draftsFromObj(JSON.parse(m[0]), want);
-      if (d.length) return { drafts: d, degraded: false };
+      const r = draftsFromObj(JSON.parse(m[0]), want);
+      if (r.drafts.length) return { drafts: r.drafts, read: r.read, degraded: false };
     } catch (e) { /* 继续 */ }
   }
 
   // 三级：按行/段切。到这一步说明格式没救了，但内容可能还能用。
   let loose = splitLoose(text).slice(0, want);
   if (!loose.length) loose = [text];
-  return { drafts: loose.map(t => ({ text: t, why: "" })), degraded: true };
+  return {
+    drafts: loose.map(t => ({ text: t, why: "" })),
+    read: "",
+    degraded: true,
+  };
 }
 
 /* ============================================================ 计价
@@ -806,13 +951,14 @@ function saveHist(h) {
 
 /** 记一条。存的是**输入 + 结果**，不是一个孤零零的输出 ——
  *  否则用户回头看不知道这条是回什么的。 */
-function pushHist(task, tone, input, drafts) {
+function pushHist(task, tone, input, drafts, read) {
   if (!drafts || !drafts.length) return;
   HIST.unshift({
     ts: Date.now() / 1000,
     task,
     tone: (TASKS[task] && TASKS[task].needsTone) ? tone : "",
     input: (input || "").slice(0, 300),
+    read: (read || "").slice(0, 400),
     drafts: drafts.slice(0, 6).map(d => ({ text: d.text, why: d.why || "" })),
   });
   // 内存和存储**一起**截断 —— 只在 saveHist 里截的话，
@@ -867,7 +1013,7 @@ function renderHist() {
     // 点一条 = 把当时的草稿重新放回主界面，可以直接复制复用
     it.onclick = () => {
       $("hdlg").close();
-      showResult({ drafts: h.drafts, cost: 0 }, { noAuto: true });
+      showResult({ drafts: h.drafts, read: h.read || "", cost: 0 }, { noAuto: true });
       setStatus("这是历史里的一条 —— 点你要的那条复制走", "info");
     };
     el.histList.appendChild(it);
@@ -957,8 +1103,9 @@ async function makeDrafts(cfg, turns, tone, task) {
     return res;
   }
 
-  const { drafts, degraded } = parseDrafts(content, n);
+  const { drafts, read, degraded } = parseDrafts(content, n);
   res.drafts = drafts;
+  res.read = read || "";
   if (degraded && content.trim()) res.error = "模型没按格式回，下面是它的原话";
   return res;
 }
@@ -986,7 +1133,7 @@ const el = {
 };
 
 // 改代码时顺手更新这个 —— 用户报「装不上」时看设置里的这行就知道他跑的哪版
-const APP_VERSION = "2026-09-29e";
+const APP_VERSION = "2026-09-29f";
 
 function setStatus(text, kind) {
   el.status.textContent = text || "";
@@ -1120,6 +1267,22 @@ function showResult(res, opts) {
     else if (res.error) setStatus(res.error, "warn");
     else setStatus("");
 
+    // 模型读到的语境 —— 放在草稿前面。
+    // 读错了用户一眼就能看出来，知道后面为什么写偏了；
+    // 读对了也是个「它真的看懂了」的确认。
+    if (res.read) {
+      const r = document.createElement("div");
+      r.className = "read";
+      const tag = document.createElement("span");
+      tag.className = "rtag";
+      tag.textContent = "理解";
+      r.appendChild(tag);
+      const txt = document.createElement("span");
+      txt.textContent = res.read;
+      r.appendChild(txt);
+      el.drafts.appendChild(r);
+    }
+
     res.drafts.forEach((d, i) => {
       const c = document.createElement("div");
       c.className = "draft";
@@ -1164,6 +1327,7 @@ function showResult(res, opts) {
  *  调那个会**抢走用户的焦点**（移动端会弹一下输入框），副作用比收益大。
  *  这里只试标准的异步剪贴板 API，失败就算了。 */
 async function autoCopyFirst(text) {
+  // ⚠ 必须用 .draft 选 —— 前面可能有个 .read（语境说明）块，不能选错
   const first = el.drafts.querySelector(".draft");
   try {
     if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error("no api");
@@ -1315,7 +1479,20 @@ async function generate() {
         setStatus("输入框里是你刚复制的那条草稿 —— 换成新的内容", "warn");
         return;
       }
-      THREAD.push({ role: "them", text, ts: Date.now() / 1000 });
+
+      // 回复档下，先看看这是不是一整段聊天记录。
+      // 是的话按说话人拆开，**你自己说过的话不能再被当成对方说的** ——
+      // 那会让模型答错位（回你的话，而不是回对方的话）。
+      const parsed = (!flat && text.includes("\n")) ? parseChatLog(text) : { turns: [] };
+      if (parsed.turns.length) {
+        for (const t of parsed.turns) {
+          THREAD.push({ role: t.role, text: t.text, ts: Date.now() / 1000 });
+        }
+        setStatus(`认出了 ${parsed.labels.length} 个说话人（${parsed.labels.join("、")}），按对话处理`, "ok");
+      } else {
+        THREAD.push({ role: "them", text, ts: Date.now() / 1000 });
+      }
+
       saveThread(THREAD);
       renderThread();
       el.input.value = "";
@@ -1342,8 +1519,9 @@ async function generate() {
 
   const cfgSnapshot = Object.assign({}, CFG);
   // 摘要/翻译要看**全文** —— 只带最近几条会让摘要直接漏内容。
-  // 只有「回复」才限轮数（那是在控制上下文长度）。
-  const thread = flat ? THREAD : THREAD.slice(-12);
+  // 回复档按**字符数**截，不按条数：一句「嗯」和一段 500 字的吐槽都是「一条」，
+  // 按条数截会让长对话丢掉的正是最有信息量的部分。
+  const thread = flat ? THREAD : tailWithin(THREAD, 6000);
   let res;
   try {
     res = await makeDrafts(cfgSnapshot, thread, cfgSnapshot.tone, task);
@@ -1359,7 +1537,7 @@ async function generate() {
   // 成功的才记历史 —— 报错的、被截断的都别进（那些是废的，占地方）
   if (res.drafts && res.drafts.length && !res.error && !res.truncated) {
     const lastThem = [...THREAD].reverse().find(t => t.role === "them");
-    pushHist(task, cfgSnapshot.tone, lastThem ? lastThem.text : "", res.drafts);
+    pushHist(task, cfgSnapshot.tone, lastThem ? lastThem.text : "", res.drafts, res.read);
   }
 
   // ⚠ 生成完把结果滚进视野。
