@@ -65,13 +65,25 @@ header .sub{font-size:11px;color:var(--dim);margin-left:auto;margin-right:4px}
 }
 .install .itxt{flex:1;font-size:12.5px;line-height:1.5}
 .install .itxt b{color:var(--accent);font-weight:600}
+/* 复制失败时摊开的网址 —— 必须能长按选中 */
+.install .itxt .url{
+  display:inline-block;margin-top:3px;padding:2px 6px;border-radius:6px;
+  background:rgba(11,16,32,.75);border:1px solid var(--line);
+  color:var(--text);font-weight:500;word-break:break-all;
+  -webkit-user-select:text;user-select:text;
+}
 .install .ibtn{
-  flex:none;min-height:0;padding:9px 15px;border:none;border-radius:10px;
+  flex:none;min-height:0;padding:9px 14px;border:none;border-radius:10px;
   background:linear-gradient(135deg,#2563eb,#0e7490);color:#fff;
   font-size:13px;font-weight:600;white-space:nowrap;
   box-shadow:0 4px 12px -5px rgba(56,140,255,.9);
 }
 .install .ibtn:active:not(:disabled){filter:brightness(1.15)}
+/* 装不了的时候这个按钮是「复制网址」—— 不是主行动，弱化它 */
+.install[data-mode="blocked"] .ibtn{
+  background:rgba(45,58,88,.85);border:1px solid var(--line);color:var(--text);
+  box-shadow:none;font-weight:500;
+}
 .install .ix{
   flex:none;align-self:flex-start;min-height:0;width:22px;height:22px;padding:0;
   border:none;border-radius:7px;background:transparent;color:var(--dim);
@@ -921,9 +933,73 @@ function isIOS() {
          (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
-function showInstall(html, withBtn) {
+// 认一下这是什么浏览器。
+// 安卓上真能装 PWA 的就 Chrome / Edge / 三星 / Opera 这几家；
+// 国产浏览器和 App 内置的 WebView 基本都装不了 ——
+// 对它们还照着 Chrome 的菜单写「点右上角 ⋮」，等于骗用户去找一个不存在的按钮。
+function browserName() {
+  const ua = navigator.userAgent;
+  if (/MicroMessenger/i.test(ua))  return "微信";
+  if (/AlipayClient/i.test(ua))    return "支付宝";
+  if (/DingTalk/i.test(ua))        return "钉钉";
+  if (/Lark|Feishu/i.test(ua))     return "飞书";
+  if (/Weibo/i.test(ua))           return "微博";
+  if (/QQ\//i.test(ua) && !/MQQBrowser/i.test(ua)) return "QQ";
+  if (/MQQBrowser/i.test(ua))      return "QQ 浏览器";
+  if (/UCBrowser/i.test(ua))       return "UC 浏览器";
+  if (/Quark/i.test(ua))           return "夸克";
+  if (/HuaweiBrowser/i.test(ua))   return "华为浏览器";
+  if (/MiuiBrowser|XiaoMi/i.test(ua)) return "小米浏览器";
+  if (/baidubrowser|BIDUBrowser/i.test(ua)) return "百度浏览器";
+  if (/SamsungBrowser/i.test(ua))  return "三星浏览器";
+  if (/OPR\/|Opera/i.test(ua))     return "Opera";
+  if (/EdgA?\//i.test(ua))         return "Edge";
+  if (/Firefox|FxiOS/i.test(ua))   return "Firefox";
+  if (/Chrome|CriOS/i.test(ua))    return "Chrome";
+  return "这个浏览器";
+}
+
+// 是不是「内置浏览器」—— 这种连 ⋮ 菜单都没有，只能换浏览器
+function isInAppBrowser() {
+  return /MicroMessenger|AlipayClient|DingTalk|Lark|Feishu|Weibo|QQ\/|QQBrowser|UCBrowser|Quark|baidubrowser|BIDUBrowser/i
+    .test(navigator.userAgent);
+}
+
+// 这个浏览器有没有可能装上
+function canInstallHere() {
+  if (isInAppBrowser()) return false;
+  return /Chrome|CriOS|EdgA|SamsungBrowser|OPR\//i.test(navigator.userAgent);
+}
+
+// 该显示什么 —— 文案和「能不能装」必须一起算出来，
+// 分成两个函数各算各的会打架（比如提示 iOS 分享步骤、却配一个「复制网址」按钮）。
+//   mode: "native"  有原生安装句柄，亮「安装」按钮
+//         "manual"  能装，但得用户自己去菜单点 —— 亮步骤说明
+//         "blocked" 这浏览器装不了 —— 亮「复制网址」，让他换 Chrome
+function installVerdict() {
+  if (isIOS()) {
+    return { mode: "manual",
+             hint: `<b>装到桌面</b>：点底部「分享」→「<b>添加到主屏幕</b>」` };
+  }
+  if (isInAppBrowser()) {
+    return { mode: "blocked",
+             hint: `<b>${browserName()}里装不了</b>：复制网址，用 <b>Chrome</b> 打开再装` };
+  }
+  if (!canInstallHere()) {
+    // Firefox 这类：能装，但菜单叫法不一样，别武断说人家装不了
+    return { mode: "manual",
+             hint: `<b>装到桌面</b>：在「<b>${browserName()}</b>」的菜单里找<b>安装</b>／<b>添加到主屏幕</b>` };
+  }
+  return { mode: "manual",
+           hint: `<b>装到桌面</b>：右上角 <b>⋮</b> 里找「<b>添加到主屏幕</b>」` };
+}
+
+// mode: "native" | "manual" | "blocked" —— 见 installVerdict()
+function showInstall(html, mode) {
   el.installTxt.innerHTML = html;
-  el.installGo.hidden = !withBtn;
+  el.install.dataset.mode = mode;
+  el.installGo.hidden = (mode === "manual");
+  el.installGo.textContent = (mode === "native") ? "安装" : "复制网址";
   el.install.hidden = false;
 }
 
@@ -934,20 +1010,13 @@ function closeInstall(forGood) {
   if (forGood) { try { localStorage.setItem(LS_NOINSTALL, "1"); } catch (e) {} }
 }
 
-// 没走过 beforeinstallprompt 的浏览器（iOS、Firefox）只能教用户手动加
-function manualHint() {
-  return isIOS()
-    ? `<b>装到桌面</b>：点底部「分享」→「<b>添加到主屏幕</b>」`
-    : `<b>装到桌面</b>：右上角 <b>⋮</b> 里找「<b>添加到主屏幕</b>」`;
-}
-
 // ⚠ 必须在脚本一开头就挂上：这个事件可能在 DOMContentLoaded 之前就触发，
 //   挂在 boot() 里会漏掉，那就只能退化成手动提示了。
 window.addEventListener("beforeinstallprompt", e => {
   e.preventDefault();                    // 拦下 Chrome 自带的横幅，换成页内这个
   INSTALL_PROMPT = e;
   if (INSTALL_READY) {
-    showInstall("<b>装到桌面</b>：变成独立 App，长按消息能直接分享过来", true);
+    showInstall("<b>装到桌面</b>：变成独立 App，长按消息能直接分享过来", "native");
   }
 });
 
@@ -960,6 +1029,19 @@ function initInstall() {
 
   el.installX.onclick = () => closeInstall(true);
   el.installGo.onclick = async () => {
+    // 装不了的情况下，这个按钮是「复制网址」—— 让用户能换 Chrome 打开
+    if (el.install.dataset.mode === "blocked") {
+      const url = location.origin + location.pathname;
+      if (await copyText(url)) {
+        el.installGo.textContent = "已复制";
+        return;
+      }
+      // 复制不了就别说「已复制」—— 把网址摊开让他自己选
+      el.installTxt.innerHTML =
+        `复制不了，手动记一下：<br><b class="url">${url}</b>`;
+      el.installGo.hidden = true;
+      return;
+    }
     if (!INSTALL_PROMPT) return;
     INSTALL_PROMPT.prompt();                               // 弹系统安装框
     const { outcome } = await INSTALL_PROMPT.userChoice;
@@ -967,11 +1049,12 @@ function initInstall() {
     closeInstall(outcome === "accepted");
   };
 
-  // 事件已经来过了 → 亮原生按钮；还没来 → 先给手动步骤（晚点来了会自动升级）
+  // 事件已经来过了 → 亮原生按钮；还没来 → 按浏览器给对应说法
   if (INSTALL_PROMPT) {
-    showInstall("<b>装到桌面</b>：变成独立 App，长按消息能直接分享过来", true);
+    showInstall("<b>装到桌面</b>：变成独立 App，长按消息能直接分享过来", "native");
   } else {
-    showInstall(manualHint(), false);
+    const v = installVerdict();
+    showInstall(v.hint, v.mode);
   }
 }
 
