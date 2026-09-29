@@ -920,6 +920,7 @@ const LS_NOINSTALL = "reply.noinstall.v1";
 
 let INSTALL_PROMPT = null;      // 安卓 Chrome/Edge 给的原生安装句柄
 let INSTALL_READY = false;      // boot 里 UI 接好了没
+let INSTALL_OPTED_OUT = false;  // 用户点过「×」，别再弹回来
 
 function isStandalone() {
   return matchMedia("(display-mode: standalone)").matches ||
@@ -1005,14 +1006,21 @@ function showInstall(html, mode) {
 
 function hideInstall() { el.install.hidden = true; }
 
+// 只有「装成功了」或者用户主动点「×」才收卡片。
+// ⚠ 关掉安装框不算 —— 那是「我现在不想装」，不是「别再问我」，
+//   卡片收了他就再也找不到入口了（句柄已经用掉，Chrome 短时间也不会再给）。
 function closeInstall(forGood) {
+  if (!forGood) return;
+  INSTALL_OPTED_OUT = true;
   hideInstall();
-  if (forGood) { try { localStorage.setItem(LS_NOINSTALL, "1"); } catch (e) {} }
+  try { localStorage.setItem(LS_NOINSTALL, "1"); } catch (e) {}
 }
 
 // ⚠ 必须在脚本一开头就挂上：这个事件可能在 DOMContentLoaded 之前就触发，
 //   挂在 boot() 里会漏掉，那就只能退化成手动提示了。
 window.addEventListener("beforeinstallprompt", e => {
+  // 用户点过「×」就别再打扰 —— 否则这个监听会把卡片重新拉出来（诈尸）
+  if (INSTALL_OPTED_OUT) return;
   e.preventDefault();                    // 拦下 Chrome 自带的横幅，换成页内这个
   INSTALL_PROMPT = e;
   if (INSTALL_READY) {
@@ -1042,11 +1050,28 @@ function initInstall() {
       el.installGo.hidden = true;
       return;
     }
-    if (!INSTALL_PROMPT) return;
-    INSTALL_PROMPT.prompt();                               // 弹系统安装框
-    const { outcome } = await INSTALL_PROMPT.userChoice;
-    INSTALL_PROMPT = null;                                 // 句柄只能用一次
-    closeInstall(outcome === "accepted");
+
+    // ⚠ 句柄已经用掉了（弹过一次、用户关掉了）就别干杵着 ——
+    //   之前这里直接 return，用户看到的是「点了没反应」。
+    //   退回手动步骤才对：Chrome 在用户关掉安装框之后，
+    //   一段时间内不会再发这个事件，⋮ 菜单是那时候唯一的入口。
+    if (!INSTALL_PROMPT) {
+      const v = installVerdict();
+      showInstall(v.hint, v.mode);
+      return;
+    }
+
+    try {
+      INSTALL_PROMPT.prompt();                             // 弹系统安装框
+      const { outcome } = await INSTALL_PROMPT.userChoice;
+      INSTALL_PROMPT = null;                               // 句柄只能用一次
+      closeInstall(outcome === "accepted");
+    } catch (err) {
+      // prompt() 可能抛（句柄过期、浏览器不给弹）—— 同样别静默
+      INSTALL_PROMPT = null;
+      const v = installVerdict();
+      showInstall(v.hint, v.mode);
+    }
   };
 
   // 事件已经来过了 → 亮原生按钮；还没来 → 按浏览器给对应说法
